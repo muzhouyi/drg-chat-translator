@@ -1,0 +1,1155 @@
+{
+  "$type": "UAssetAPI.UAsset, UAssetAPI",
+  "Info": "Serialized with UAssetAPI 1.1.0 (8b8687a)",
+  "NameMap": [
+    "/Game/_ModHub/IHubContext",
+    "/Game/_ModHub/IHubPageWidget",
+    "/Game/ModHub/Pages/ChatTranslatorPage",
+    "/Game/ModHub/UI/Fonts/Inter",
+    "/Script/CoreUObject",
+    "/Script/Engine",
+    "/Script/UMG",
+    "ArrayProperty",
+    "BeginHubPage",
+    "bHasScriptImplementedPaint",
+    "bHasScriptImplementedTick",
+    "BlueprintGeneratedClass",
+    "BoolProperty",
+    "bStretchToContainer",
+    "ByteProperty",
+    "Class",
+    "Content",
+    "Default__Function",
+    "Default__IHubContext_C",
+    "Default__IHubPageWidget_C",
+    "Default__ChatTranslatorPage_C",
+    "Default__TextBlock",
+    "Default__UserWidget",
+    "Default__VerticalBox",
+    "Default__VerticalBoxSlot",
+    "Default__WidgetBlueprintGeneratedClass",
+    "Default__WidgetTree",
+    "Engine",
+    "EntryPoint",
+    "ESlateSizeRule",
+    "ESlateSizeRule::Fill",
+    "ETextJustify",
+    "ETextJustify::Center",
+    "EVerticalAlignment",
+    "ExecuteUbergraph_ChatTranslatorPage",
+    "Font",
+    "FontObject",
+    "Function",
+    "GetContainerMode",
+    "GetPageInfo",
+    "HubContext",
+    "HubPageClosed",
+    "HubPageOpened",
+    "IHubContext_C",
+    "IHubPageWidget_C",
+    "Inter",
+    "InterfaceProperty",
+    "IntProperty",
+    "Justification",
+    "K2Node_Event_HubContext",
+    "MsgTextBlock",
+    "NameProperty",
+    "None",
+    "Object",
+    "ObjectProperty",
+    "Package",
+    "ChatTranslatorPage_C",
+    "PageName",
+    "Parent",
+    "PointerToUberGraphFrame",
+    "Regular",
+    "RootWidget",
+    "ScriptStruct",
+    "Size",
+    "SizeRule",
+    "SlateChildSize",
+    "SlateFontInfo",
+    "Slot",
+    "Slots",
+    "StructProperty",
+    "Text",
+    "TextBlock",
+    "TextProperty",
+    "TypefaceFontName",
+    "UberGraphFrame",
+    "UberGraphFunction",
+    "UserWidget",
+    "VAlign_Center",
+    "VerticalAlignment",
+    "VerticalBox",
+    "VerticalBoxSlot",
+    "WidgetBlueprintGeneratedClass",
+    "WidgetTree"
+  ],
+  "CustomSerializationFlags": "None",
+  "UseSeparateBulkDataFiles": true,
+  "IsUnversioned": true,
+  "FileVersionLicenseeUE": 0,
+  "ObjectVersion": "VER_UE4_CORRECT_LICENSEE_FLAG",
+  "ObjectVersionUE5": "UNKNOWN",
+  "CustomVersionContainer": [
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{375EC13C-06E4-48FB-B500-84F0262A717E}",
+      "FriendlyName": "FCoreObjectVersion",
+      "Version": 4,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{E4B068ED-F494-42E9-A231-DA0B2E46BB41}",
+      "FriendlyName": "FEditorObjectVersion",
+      "Version": 40,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{CFFC743F-43B0-4480-9391-14DF171D2073}",
+      "FriendlyName": "FFrameworkObjectVersion",
+      "Version": 37,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{7B5AE74C-D270-4C10-A958-57980B212A5A}",
+      "FriendlyName": "FSequencerObjectVersion",
+      "Version": 13,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{29E575DD-E0A3-4627-9D10-D276232CDCEA}",
+      "FriendlyName": "FAnimPhysObjectVersion",
+      "Version": 17,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{601D1886-AC64-4F84-AA16-D3DE0DEAC7D6}",
+      "FriendlyName": "FFortniteMainBranchObjectVersion",
+      "Version": 47,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{F2AED0AC-9AFE-416F-8664-AA7FFA26D6FC}",
+      "FriendlyName": "FNiagaraObjectVersion",
+      "Version": 1,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{717F9EE7-E9B0-493A-88B3-91321B388107}",
+      "FriendlyName": "FAssetRegistryVersion",
+      "Version": 17,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{9C54D522-A826-4FBE-9421-074661B482D0}",
+      "FriendlyName": "FReleaseObjectVersion",
+      "Version": 43,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{E7086368-6B23-4C58-8439-1B7016265E91}",
+      "FriendlyName": "FFortniteReleaseBranchCustomObjectVersion",
+      "Version": 1,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{D89B5E42-24BD-4D46-8412-ACA8DF641779}",
+      "FriendlyName": "FUE5ReleaseStreamObjectVersion",
+      "Version": 0,
+      "IsSerialized": false
+    },
+    {
+      "$type": "UAssetAPI.CustomVersion, UAssetAPI",
+      "Name": null,
+      "Key": "{FCF57AFA-5076-4283-B9A9-E658FFA02D32}",
+      "FriendlyName": "FNiagaraCustomVersion",
+      "Version": 68,
+      "IsSerialized": false
+    }
+  ],
+  "SoftObjectPathList": null,
+  "GatherableTextData": null,
+  "Exports": [
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Final, FUNC_UbergraphFunction",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [
+        {
+          "$type": "UAssetAPI.FieldTypes.FGenericProperty, UAssetAPI",
+          "ArrayDim": "TArray",
+          "ElementSize": 4,
+          "PropertyFlags": "CPF_BlueprintVisible, CPF_BlueprintReadOnly, CPF_Parm",
+          "RepIndex": 0,
+          "RepNotifyFunc": "None",
+          "BlueprintReplicationCondition": "COND_None",
+          "RawValue": null,
+          "SerializedType": "IntProperty",
+          "Name": "EntryPoint",
+          "Flags": "RF_Public",
+          "MetaDataMap": null
+        }
+      ],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 3,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "ExecuteUbergraph_ChatTranslatorPage",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 94,
+      "SerialOffset": 3892,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Public, FUNC_HasOutParms, FUNC_BlueprintCallable, FUNC_BlueprintEvent",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [
+        {
+          "$type": "UAssetAPI.FieldTypes.FInterfaceProperty, UAssetAPI",
+          "InterfaceClass": -1,
+          "ArrayDim": "TArray",
+          "ElementSize": 16,
+          "PropertyFlags": "CPF_ConstParm, CPF_BlueprintVisible, CPF_BlueprintReadOnly, CPF_Parm, CPF_OutParm, CPF_ReferenceParm",
+          "RepIndex": 0,
+          "RepNotifyFunc": "None",
+          "BlueprintReplicationCondition": "COND_None",
+          "RawValue": null,
+          "SerializedType": "InterfaceProperty",
+          "Name": "HubContext",
+          "Flags": "RF_Public",
+          "MetaDataMap": null
+        }
+      ],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 3,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "BeginHubPage",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 98,
+      "SerialOffset": 3986,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Public, FUNC_BlueprintCallable, FUNC_BlueprintEvent",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 3,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "HubPageOpened",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 47,
+      "SerialOffset": 4084,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Public, FUNC_BlueprintCallable, FUNC_BlueprintEvent",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 3,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "HubPageClosed",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 47,
+      "SerialOffset": 4131,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Public, FUNC_HasOutParms, FUNC_BlueprintCallable, FUNC_BlueprintEvent",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [
+        {
+          "$type": "UAssetAPI.FieldTypes.FGenericProperty, UAssetAPI",
+          "ArrayDim": "TArray",
+          "ElementSize": 24,
+          "PropertyFlags": "CPF_Parm, CPF_OutParm",
+          "RepIndex": 0,
+          "RepNotifyFunc": "None",
+          "BlueprintReplicationCondition": "COND_None",
+          "RawValue": null,
+          "SerializedType": "TextProperty",
+          "Name": "PageName",
+          "Flags": "RF_Public",
+          "MetaDataMap": null
+        }
+      ],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Let, UAssetAPI",
+          "Value": {
+            "$type": "UAssetAPI.Kismet.Bytecode.KismetPropertyPointer, UAssetAPI",
+            "New": {
+              "$type": "UAssetAPI.UnrealTypes.FFieldPath, UAssetAPI",
+              "Path": [
+                "PageName"
+              ],
+              "ResolvedOwner": 5
+            }
+          },
+          "Variable": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_LocalOutVariable, UAssetAPI",
+            "Variable": {
+              "$type": "UAssetAPI.Kismet.Bytecode.KismetPropertyPointer, UAssetAPI",
+              "New": {
+                "$type": "UAssetAPI.UnrealTypes.FFieldPath, UAssetAPI",
+                "Path": [
+                  "PageName"
+                ],
+                "ResolvedOwner": 5
+              }
+            }
+          },
+          "Expression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_TextConst, UAssetAPI",
+            "Value": {
+              "$type": "UAssetAPI.Kismet.Bytecode.FScriptText, UAssetAPI",
+              "TextLiteralType": "LocalizedText",
+              "LocalizedSource": {
+                "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_UnicodeStringConst, UAssetAPI",
+                "Value": "设置"
+              },
+              "LocalizedKey": {
+                "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
+                "Value": "C4452DF086214E02A4615C11C243A2D7"
+              },
+              "LocalizedNamespace": {
+                "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
+                "Value": ""
+              },
+              "InvariantLiteralString": null,
+              "LiteralString": null,
+              "StringTableAsset": null,
+              "StringTableId": null,
+              "StringTableKey": null
+            }
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 66,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "GetPageInfo",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 173,
+      "SerialOffset": 4178,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [
+        5
+      ],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.FunctionExport, UAssetAPI",
+      "FunctionFlags": "FUNC_Public, FUNC_HasOutParms, FUNC_BlueprintCallable, FUNC_BlueprintEvent",
+      "SuperStruct": 0,
+      "Children": [],
+      "LoadedProperties": [
+        {
+          "$type": "UAssetAPI.FieldTypes.FBoolProperty, UAssetAPI",
+          "FieldSize": 1,
+          "ByteOffset": 0,
+          "ByteMask": 1,
+          "FieldMask": 255,
+          "NativeBool": true,
+          "Value": true,
+          "ArrayDim": "TArray",
+          "ElementSize": 1,
+          "PropertyFlags": "CPF_Parm, CPF_OutParm",
+          "RepIndex": 0,
+          "RepNotifyFunc": "None",
+          "BlueprintReplicationCondition": "COND_None",
+          "RawValue": null,
+          "SerializedType": "BoolProperty",
+          "Name": "bStretchToContainer",
+          "Flags": "RF_Public",
+          "MetaDataMap": null
+        }
+      ],
+      "ScriptBytecode": [
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_LetBool, UAssetAPI",
+          "VariableExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_LocalOutVariable, UAssetAPI",
+            "Variable": {
+              "$type": "UAssetAPI.Kismet.Bytecode.KismetPropertyPointer, UAssetAPI",
+              "New": {
+                "$type": "UAssetAPI.UnrealTypes.FFieldPath, UAssetAPI",
+                "Path": [
+                  "bStretchToContainer"
+                ],
+                "ResolvedOwner": 6
+              }
+            }
+          },
+          "AssignmentExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_True, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Return, UAssetAPI",
+          "ReturnExpression": {
+            "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_Nothing, UAssetAPI"
+          }
+        },
+        {
+          "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
+        }
+      ],
+      "ScriptBytecodeSize": 14,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "GetContainerMode",
+      "OuterIndex": 7,
+      "ClassIndex": -3,
+      "SuperIndex": 0,
+      "TemplateIndex": -12,
+      "ObjectFlags": "RF_Public",
+      "SerialSize": 119,
+      "SerialOffset": 4351,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [
+        6
+      ],
+      "SerializationBeforeCreateDependencies": [],
+      "CreateBeforeCreateDependencies": [
+        7
+      ],
+      "Extras": "AAAAAAAAAAA="
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.ClassExport, UAssetAPI",
+      "FuncMap": [
+        [
+          "ExecuteUbergraph_ChatTranslatorPage",
+          1
+        ],
+        [
+          "BeginHubPage",
+          2
+        ],
+        [
+          "HubPageOpened",
+          3
+        ],
+        [
+          "HubPageClosed",
+          4
+        ],
+        [
+          "GetPageInfo",
+          5
+        ],
+        [
+          "GetContainerMode",
+          6
+        ]
+      ],
+      "ClassFlags": "CLASS_Parsed, CLASS_ReplicationDataIsSetUp, CLASS_EditInlineNew, CLASS_CompiledFromBlueprint, CLASS_DefaultToInstanced",
+      "ClassWithin": -4,
+      "ClassConfigName": "Engine",
+      "Interfaces": [
+        {
+          "$type": "UAssetAPI.ExportTypes.SerializedInterfaceReference, UAssetAPI",
+          "Class": -2,
+          "PointerOffset": 0,
+          "bImplementedByK2": true
+        }
+      ],
+      "ClassGeneratedBy": 0,
+      "bDeprecatedForceScriptOrder": false,
+      "bCooked": true,
+      "ClassDefaultObject": 8,
+      "SuperStruct": -6,
+      "Children": [
+        6,
+        5,
+        4,
+        3,
+        2,
+        1
+      ],
+      "LoadedProperties": [],
+      "ScriptBytecode": [],
+      "ScriptBytecodeSize": 0,
+      "ScriptBytecodeRaw": null,
+      "Field": {
+        "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
+        "Next": null
+      },
+      "Data": [],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "ChatTranslatorPage_C",
+      "OuterIndex": 0,
+      "ClassIndex": -9,
+      "SuperIndex": -6,
+      "TemplateIndex": -26,
+      "ObjectFlags": "RF_Public, RF_Transactional",
+      "SerialSize": 188,
+      "SerialOffset": 4470,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": true,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [
+        -6
+      ],
+      "CreateBeforeSerializationDependencies": [
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        -2
+      ],
+      "SerializationBeforeCreateDependencies": [
+        -9,
+        -26
+      ],
+      "CreateBeforeCreateDependencies": [
+        -6
+      ],
+      "Extras": ""
+    },
+    {
+      "$type": "UAssetAPI.ExportTypes.NormalExport, UAssetAPI",
+      "Data": [
+        {
+          "$type": "UAssetAPI.PropertyTypes.Objects.BoolPropertyData, UAssetAPI",
+          "Name": "bHasScriptImplementedTick",
+          "ArrayIndex": 0,
+          "PropertyGuid": null,
+          "IsZero": false,
+          "PropertyTagFlags": "None",
+          "PropertyTypeName": null,
+          "PropertyTagExtensions": "NoExtension",
+          "Value": false
+        },
+        {
+          "$type": "UAssetAPI.PropertyTypes.Objects.BoolPropertyData, UAssetAPI",
+          "Name": "bHasScriptImplementedPaint",
+          "ArrayIndex": 0,
+          "PropertyGuid": null,
+          "IsZero": false,
+          "PropertyTagFlags": "None",
+          "PropertyTypeName": null,
+          "PropertyTagExtensions": "NoExtension",
+          "Value": false
+        }
+      ],
+      "ObjectGuid": null,
+      "SerializationControl": "NoExtension",
+      "Operation": "None",
+      "HasLeadingFourNullBytes": false,
+      "ObjectName": "Default__ChatTranslatorPage_C",
+      "OuterIndex": 0,
+      "ClassIndex": 7,
+      "SuperIndex": 0,
+      "TemplateIndex": -23,
+      "ObjectFlags": "RF_Public, RF_ClassDefaultObject, RF_ArchetypeObject",
+      "SerialSize": 60,
+      "SerialOffset": 4658,
+      "ScriptSerializationStartOffset": 0,
+      "ScriptSerializationEndOffset": 0,
+      "bForcedExport": false,
+      "bNotForClient": false,
+      "bNotForServer": false,
+      "PackageGuid": "{00000000-0000-0000-0000-000000000000}",
+      "IsInheritedInstance": false,
+      "PackageFlags": "PKG_None",
+      "bNotAlwaysLoadedForEditorGame": false,
+      "bIsAsset": false,
+      "GeneratePublicHash": false,
+      "SerializationBeforeSerializationDependencies": [],
+      "CreateBeforeSerializationDependencies": [],
+      "SerializationBeforeCreateDependencies": [
+        7,
+        -23
+      ],
+      "CreateBeforeCreateDependencies": [],
+      "Extras": ""
+    }
+  ],
+  "SearchableNames": null,
+  "ImportTypeHierarchies": null,
+  "MetaData": null,
+  "Thumbnails": null,
+  "WorldTileInfo": null,
+  "AppendedNullBytes": 0,
+  "OtherAssetsFailedToAccess": [],
+  "LegacyFileVersion": -7,
+  "DataResourceVersion": "Invalid",
+  "DataResources": null,
+  "UsesEventDrivenLoader": true,
+  "WillSerializeNameHashes": true,
+  "Imports": [
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "IHubContext_C",
+      "OuterIndex": -15,
+      "ClassPackage": "/Script/Engine",
+      "ClassName": "BlueprintGeneratedClass",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "IHubPageWidget_C",
+      "OuterIndex": -16,
+      "ClassPackage": "/Script/Engine",
+      "ClassName": "BlueprintGeneratedClass",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Function",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "UserWidget",
+      "OuterIndex": -20,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "WidgetBlueprintGeneratedClass",
+      "OuterIndex": -20,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Default__Function",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Function",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Default__IHubContext_C",
+      "OuterIndex": -15,
+      "ClassPackage": "/Game/_ModHub/IHubContext",
+      "ClassName": "IHubContext_C",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Default__IHubPageWidget_C",
+      "OuterIndex": -16,
+      "ClassPackage": "/Game/_ModHub/IHubPageWidget",
+      "ClassName": "IHubPageWidget_C",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "/Game/_ModHub/IHubContext",
+      "OuterIndex": 0,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Package",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "/Game/_ModHub/IHubPageWidget",
+      "OuterIndex": 0,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Package",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "/Script/CoreUObject",
+      "OuterIndex": 0,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Package",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "/Script/Engine",
+      "OuterIndex": 0,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Package",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "/Script/UMG",
+      "OuterIndex": 0,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Package",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Default__UserWidget",
+      "OuterIndex": -20,
+      "ClassPackage": "/Script/UMG",
+      "ClassName": "UserWidget",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Default__WidgetBlueprintGeneratedClass",
+      "OuterIndex": -20,
+      "ClassPackage": "/Script/UMG",
+      "ClassName": "WidgetBlueprintGeneratedClass",
+      "PackageName": null,
+      "bImportOptional": false
+    },
+    {
+      "$type": "UAssetAPI.Import, UAssetAPI",
+      "ObjectName": "Object",
+      "OuterIndex": -18,
+      "ClassPackage": "/Script/CoreUObject",
+      "ClassName": "Class",
+      "PackageName": null,
+      "bImportOptional": false
+    }
+  ],
+  "DependsMap": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "SoftPackageReferenceList": null,
+  "AssetRegistryDependencyDataOffset": -1,
+  "AssetRegistryRecords": [],
+  "ImportBits": null,
+  "SoftPackageBits": null,
+  "ExtraPackageDependencies": null,
+  "BulkData": null,
+  "AdditionalFiles": "wYMqng==",
+  "Trailer": null,
+  "ValorantGarbageData": null,
+  "SeaOfThievesGarbageData": null,
+  "Generations": [
+    {
+      "$type": "UAssetAPI.FGenerationInfo, UAssetAPI",
+      "ExportCount": 8,
+      "NameCount": 83
+    }
+  ],
+  "PackageGuid": "{F4D669CD-1962-4FA5-AEE6-5316EDA8B3C5}",
+  "PersistentGuid": "{00000000-0000-0000-0000-000000000000}",
+  "RecordedEngineVersion": {
+    "$type": "UAssetAPI.FEngineVersion, UAssetAPI",
+    "Major": 0,
+    "Minor": 0,
+    "Patch": 0,
+    "Changelist": 0,
+    "Branch": null
+  },
+  "RecordedCompatibleWithEngineVersion": {
+    "$type": "UAssetAPI.FEngineVersion, UAssetAPI",
+    "Major": 0,
+    "Minor": 0,
+    "Patch": 0,
+    "Changelist": 0,
+    "Branch": null
+  },
+  "ChunkIDs": [],
+  "PackageSource": 0,
+  "FolderName": "None",
+  "LocalizationId": null,
+  "SoftObjectPathsCount": 0,
+  "SoftObjectPathsOffset": 0,
+  "SearchableNamesOffset": 0,
+  "ThumbnailTableOffset": 0,
+  "ImportTypeHierarchiesCount": 0,
+  "ImportTypeHierarchiesOffset": 0,
+  "SavedHash": null,
+  "CompressionFlags": 0,
+  "AdditionalPackagesToCook": [],
+  "NamesReferencedFromExportDataCount": 83,
+  "PayloadTocOffset": -1,
+  "DataResourceOffset": -1,
+  "doWeHaveAssetRegistryData": true,
+  "doWeHaveWorldTileInfo": false,
+  "PackageFlags": "PKG_RequiresLocalizationGather, PKG_FilterEditorOnly",
+  "HasUnversionedProperties": false,
+  "IsFilterEditorOnly": true,
+  "IsPreDependencyFormat": true
+}

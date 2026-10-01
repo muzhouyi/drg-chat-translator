@@ -2,7 +2,7 @@
 
 《深岩银河》游戏内中英聊天翻译模组，直接读取聊天文字。收到的英文可译成仅本机显示的中文；输入的中文可在发送前译成英文。
 
-**需要 Mintcat、UE4SS 框架和智谱 API 密钥。当前版本：0.2.1 测试版。**
+**需要 Mintcat、UE4SS 框架和智谱 API 密钥。当前版本：0.2.2 测试版。**
 
 ## 使用前准备
 
@@ -10,14 +10,16 @@
 - [Mintcat](https://github.com/iris-cat-dev/mintcat)，并在其中开启 UE4SS 框架。
 - [智谱开放平台](https://open.bigmodel.cn/console)账号及有效 API 密钥。默认模型为 `glm-4-flash-250414`，需有该模型的调用权限。
 
-Mod Hub 可选：安装后可在其左侧“聊天翻译”入口调整设置；没有 Mod Hub 时使用 F9。
+Mod Hub 可选：安装后按 H 打开，在左侧“Chat Translator · 聊天翻译”入口调整设置；没有 Mod Hub 时使用 F9。
 
 ## 安装
 
-1. 在 [Releases](https://github.com/muzhouyi/drg-chat-translator/releases) 下载 `drg-chat-translator-0.2.1.zip` 并解压。
-2. 在 Mintcat 添加本地模组，选择解压得到的 `DRGChatTranslator-0.2.1-Mintcat.zip`。停用旧版本，开启 UE4SS 框架并保存更改。
+1. 在 [Releases](https://github.com/muzhouyi/drg-chat-translator/releases) 下载 `drg-chat-translator-0.2.2.zip` 并解压。
+2. 退出游戏，在 Mintcat 添加本地模组，选择解压得到的 `DRGChatTranslator-0.2.2-Mintcat.zip`。停用旧版本，开启 UE4SS 框架并保存更改。
 3. 双击 `配置翻译.cmd`，填写游戏根目录和智谱 API 密钥，点击“保存配置”。游戏目录可在 Steam 中右键《深岩银河》→ **管理 → 浏览本地文件** 找到。
 4. 启动或重启游戏，进入空间站，按 F7 测试接口。错误详情可在配置工具的“查看运行状态”中查看。
+
+安装包已包含 Mod Hub 适配组件，由 Mintcat 合并安装。不要将 `DRGChatTranslatorHub_P.pak` 单独复制到游戏的 `Paks` 目录。若此前安装过早期调试版并手动放入该文件，请先将独立文件移出，再通过 Mintcat 安装新版。
 
 ## 操作
 
@@ -40,6 +42,6 @@ F9 查看记录、翻页和清空聊天不会调用 API。已有译文优先从�
 
 ## 验证范围
 
-0.2.1 已通过 29 项模拟测试。适配开发环境为 UE4SSL 0.31.0、Mod Hub 1.2.5。
+0.2.2 已通过 38 项本地检查，包含模拟测试与适配组件读回检查。真实游戏日志已确认 Mod Hub 模组、菜单条目和设置页注册成功。适配环境为 UE4SSL 0.31.0、Mod Hub 1.2.5。
 
 开发者可使用 Node.js 执行 `npm test`。玩家使用安装包无需安装 Node.js。

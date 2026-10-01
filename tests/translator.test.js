@@ -74,8 +74,8 @@ test("overlong translated output fails instead of silently truncating it", async
 });
 
 async function runtimeFixture(options = {}) {
-  const events = new Map(), keys = new Map(), calls = [], requests = [], logs = [], files = new Map(), widgets = [], uiCallbacks = [], bindings = new Map(), lookups = [];
-  let chatScans = 0;
+  const events = new Map(), keys = new Map(), calls = [], requests = [], logs = [], files = new Map(), widgets = [], uiCallbacks = [], bindings = new Map(), lookups = [], hubCallbacks = [], notifications = new Map();
+  let chatScans = 0, hubScans = 0, pageCreates = 0, onGameThread = false;
   let fixtureConfig = { ...config, ...(options.config || {}) };
   let bindingSequence = 0;
   let hub = null;
@@ -96,7 +96,44 @@ async function runtimeFixture(options = {}) {
     widgets.push(widget); return widget;
   };
   const commonCall = (object, method, ...args) => {
-    calls.push({ object, method, args });
+    calls.push({ object, method, args, onGameThread });
+    if (['GetAsset', 'BeginDeferredActorSpawnFromClass', 'FinishSpawningActor', 'Create', 'RegisterMod', 'AddModToUI'].includes(method) && !onGameThread) {
+      throw new Error('native operation on non-game thread');
+    }
+    if (method === 'GetAsset' && options.dispatchFailure) throw new Error('native loading failed');
+    if (method === 'DoesImplementInterface') return result(!options.interfaceRejected);
+    if (method === 'GetAsset') {
+      if (options.adapterUnavailable) return result(null);
+      return result({ type: args[0].AssetName, IsValid: () => true, GetName: () => args[0].AssetName });
+    }
+    if (method === 'Create') {
+      if (options.firstPageCreateFails && ++pageCreates === 1) throw new Error('native page temporarily unavailable');
+      return result(newObject(args[1].type));
+    }
+    if (method === 'BeginDeferredActorSpawnFromClass') { const actor = newObject(args[1].type); actor.isActor = true; return result(actor); }
+    if (method === 'FinishSpawningActor') return result(args[0]);
+    if (method === 'GetModInfo') return { ModName: 'Chat Translator · 聊天翻译', ModAuthor: 'Local Chat Translator', ModVersion: '0.2.2', __success: true };
+    if (method === 'GetModPages') return { HubPages: object.TranslatorPages || [], __success: true };
+    if (method === 'AddModToUI' || method === 'RegisterMod') {
+      const host = method === 'RegisterMod' ? object : object.ModBP, mod = args[0], menu = host.Widget_ModHub.MenuItemList;
+      assert.equal(mod.isActor, true, 'native MenuItem.UserMod requires an Actor');
+      if (method === 'RegisterMod' && host.RegisteredMods.includes(mod)) return { __success: true };
+      if (method === 'RegisterMod') host.RegisteredMods.push(mod);
+      if (!menu.MenuItems.some(item => item.UserMod === mod)) {
+        const item = newObject('MenuItem_C'); item.UserMod = mod; item.value = 'Chat Translator · 聊天翻译'; menu.MenuItems.push(item);
+        const id = ++bindingSequence;
+        const label = newObject('TextBlock'); label.value = 'Chat Translator · 聊天翻译'; item.children.push(label);
+        bindings.set(id, { object: item, callback: () => {
+          const page = mod.TranslatorPages[0]; commonCall(hub.PageContainer, 'ClearChildren'); commonCall(hub.PageContainer, 'AddChild', page);
+        } });
+      }
+      commonCall(menu, 'SortItems'); return { __success: true };
+    }
+    if (method === 'SortItems') {
+      commonCall(object.ItemsScrollBox, 'ClearChildren');
+      for (const item of object.MenuItems) if (item.value.charCodeAt(0) <= 256) commonCall(object.ItemsScrollBox, 'AddChild', item);
+      return { __success: true };
+    }
     if (method === "GetText") { if (options.getTextFails) throw new Error("getter missing"); return result(object.value); }
     if (method === "SetText") { object.value = args[0]; return { __success: true }; }
     if (method === "HasKeyboardFocus" || method === "HasAnyUserFocus") return result(options.focused !== false);
@@ -124,30 +161,36 @@ async function runtimeFixture(options = {}) {
     throw new Error("Unexpected game call " + method);
   };
   if (options.hub) {
-    const list = newObject('ScrollBox'), menu = newObject('MenuItemList_C'); menu.ItemsScrollBox = list;
+    const list = newObject('ScrollBox'), menu = newObject('MenuItemList_C'); menu.ItemsScrollBox = list; menu.MenuItems = [];
     hub = { IsValid: () => true, GetName: () => 'ModHub_C_0', MenuItemList: menu, PageContainer: newObject('Border') };
     if (options.embeddedHub) hub.parent = newObject('Border');
+    hub.ModBP = { IsValid: () => true, GetName: () => 'Mod_ModHub_C_0', Widget_ModHub: hub, RegisteredMods: [] };
   }
   const context = vm.createContext({
-    console, Date: Clock, setTimeout: (fn, ms) => ms === 500 ? (uiCallbacks.push(fn), 0) : [1000, 2000].includes(ms) ? 0 : setTimeout(fn, ms), clearTimeout, AbortController,
+    console, Date: Clock, setTimeout: (fn, ms) => ms === 500 ? (uiCallbacks.push(fn), 0) : [100, 2500].includes(ms) ? (hubCallbacks.push(fn), hubCallbacks.length) : [1000, 2000].includes(ms) ? 0 : setTimeout(fn, ms), clearTimeout: id => { if (typeof id === 'number') hubCallbacks[id - 1] = null; else clearTimeout(id); }, AbortController,
     getGameDirectory: () => "fake/FSD",
     readFile: path => path.endsWith('chat-history.json') ? (options.historyRaw || "") : JSON.stringify(fixtureConfig),
     writeFile: (path, value) => { files.set(path, value); if (path.endsWith('/config.json')) fixtureConfig = JSON.parse(value); return true; },
     print: message => logs.push(message),
     GetProperty: (object, key) => options.nullFields ? null : key === "Text" ? object?.value : object?.[key],
     SetProperty: (object, key, value) => { object[key] = value; return true; },
-    StaticFindObject: path => { lookups.push(path); return { type: path.split('.').at(-1) }; },
+    StaticFindObject: path => { lookups.push(path); return path.includes('/Game/DRGChatTranslatorHub/') ? null : { type: path.split('.').at(-1) }; },
     NewUObject: cls => newObject(cls.type),
     BindDelegateCallback: (object, _name, callback) => { const id = ++bindingSequence; bindings.set(id, { object, callback }); return id; },
     UnbindDelegateCallback: id => bindings.delete(id),
     __umgSetUserWidgetRoot: (object, root) => { object.root = root; },
+    __umgDispatchSync: options.noGameDispatcher ? undefined : (object, method, ...args) => {
+      onGameThread = true;
+      try { return commonCall(object, method, ...args); } finally { onGameThread = false; }
+    },
     FindFirstOf: () => owner,
-    FindAllInstancesOfClass: name => name === "HUD_Chat_C" ? (chatScans++, [chat]) : name === 'ModHub_C' ? (hub ? [hub] : []) : name === "FSDPlayerState" ? (options.players || []).map(name => ({ name, IsValid: () => true, GetName: () => "PlayerState_" + name })) : [],
+    FindAllInstancesOfClass: name => name === "HUD_Chat_C" ? (chatScans++, [chat]) : name === 'ModHub_C' ? (hub ? [hub] : []) : name === 'Mod_ModHub_C' ? (hubScans++, hub ? [hub.ModBP] : []) : name === "FSDPlayerState" ? (options.players || []).map(name => ({ name, IsValid: () => true, GetName: () => "PlayerState_" + name })) : [],
     CallFunction: commonCall, CallFunctionEx: commonCall,
     RegisterHook: (path, _pre, post) => { events.set(path, post); return [1, 2]; },
+    RegisterBindHook: (path, _pre, post) => { events.set(path, post); return [3, 4]; },
     RegisterKeyBind: (key, callback) => { keys.set(key, callback); return true; },
     RegisterLoadMapPreHook: callback => events.set("travel", callback),
-    NotifyOnNewObject: () => {},
+    NotifyOnNewObject: (name, callback) => notifications.set(name, callback),
     fetch: (_url, options) => new Promise(resolve => requests.push({ options, resolve })),
   });
   const modules = new Map();
@@ -155,7 +198,12 @@ async function runtimeFixture(options = {}) {
   const main = new vm.SourceTextModule(fs.readFileSync(new URL("../js/main.js", import.meta.url), "utf8"), { context });
   await main.link(name => modules.get(name));
   await main.evaluate();
-  return { events, keys, calls, requests, logs, input, chat, widgets, files, controller, hub, lookups, chatScans: () => chatScans,
+  // The dispatcher is installed after module evaluation in the actual runtime.
+  const initialHubCheck = hubCallbacks.findIndex(fn => typeof fn === 'function');
+  if (initialHubCheck >= 0) { const callback = hubCallbacks[initialHubCheck]; hubCallbacks[initialHubCheck] = null; callback(); }
+  return { events, keys, calls, requests, logs, input, chat, widgets, files, controller, hub, lookups, notifications, chatScans: () => chatScans, hubScans: () => hubScans,
+    refreshHub: () => commonCall(hub.MenuItemList, 'SortItems'),
+    pulseHub: () => { const callback = hubCallbacks.find(fn => typeof fn === 'function'); if (callback) { hubCallbacks[hubCallbacks.indexOf(callback)] = null; callback(); } },
     click: caption => {
       for (const { object, callback } of bindings.values()) {
         if (!object.released && object.enabled !== false && object.children?.some(child => child.value === caption)) { callback(); return; }
@@ -438,12 +486,15 @@ test('F9 closing restores game controls and balances only its own input blocks',
   assert.equal(runtime.requests.length, 0);
 });
 
-test('embedded Mod Hub has a sidebar entry and settings page using separate UObject property links', async () => {
+test('Mod Hub registers an interface mod and native menu item; sorting and reopening retain it without scans', async () => {
   const runtime = await runtimeFixture({ hub: true, embeddedHub: true, open: false, focused: false });
   assert.ok(uiText(runtime).includes('聊天翻译'));
-  assert.equal(runtime.hub.MenuItemList.ItemsScrollBox.children[0].type, 'Button');
-  runtime.click('聊天翻译');
-  assert.equal(runtime.hub.PageContainer.children[0].type, 'VerticalBox');
+  assert.equal(runtime.hub.MenuItemList.ItemsScrollBox.children[0].type, 'MenuItem_C');
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+  runtime.refreshHub();
+  assert.equal(runtime.hub.MenuItemList.ItemsScrollBox.children[0].type, 'MenuItem_C');
+  runtime.click('Chat Translator · 聊天翻译');
+  assert.equal(runtime.hub.PageContainer.children[0].type, 'ChatTranslatorPage_C');
   runtime.click('自动英→中：开启');
   assert.equal(JSON.parse([...runtime.files].find(([path]) => path.endsWith('/config.json'))[1]).IncomingEnabled, false);
   runtime.click('聊天记录（F9）');
@@ -453,6 +504,75 @@ test('embedded Mod Hub has a sidebar entry and settings page using separate UObj
   const inputMode = runtime.calls.filter(call => call.method === 'SetInputMode_GameAndUIEx').at(-1);
   assert.equal(inputMode.args[1], runtime.hub);
   assert.equal(runtime.controller.bShowMouseCursor, true);
+  const scans = runtime.hubScans();
+  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.pulseHub(); runtime.refreshHub();
+  assert.equal(runtime.hubScans(), scans);
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+  assert.equal(runtime.hub.MenuItemList.MenuItems.length, 1);
+  assert.ok(runtime.logs.some(line => line.includes('原生注册已确认')));
+});
+
+test('missing cooked adapter reports failure, preserves F9 and never claims successful registration', async () => {
+  const runtime = await runtimeFixture({ hub: true, adapterUnavailable: true, config: { IncomingEnabled: false } });
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
+  assert.ok(runtime.logs.some(line => line.includes('适配组件未能加载')));
+  assert.ok(!runtime.logs.some(line => line.includes('原生注册已确认')));
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+  for (let i = 0; i < 16; i++) runtime.pulseHub();
+  const scans = runtime.hubScans(); runtime.pulseHub();
+  assert.equal(runtime.hubScans(), scans, 'discovery stops after bounded retries');
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('native registration recovers a missing native menu item without adding a second mod', async () => {
+  const runtime = await runtimeFixture({ hub: true });
+  runtime.hub.MenuItemList.MenuItems = [];
+  runtime.refreshHub();
+  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.pulseHub();
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+  assert.equal(runtime.hub.MenuItemList.MenuItems.length, 1);
+  assert.equal(runtime.hub.MenuItemList.ItemsScrollBox.children.length, 1);
+});
+
+test('partial page failure cleans up the unfinished adapter and stops native attempts for this run', async () => {
+  const runtime = await runtimeFixture({ hub: true, firstPageCreateFails: true });
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
+  assert.ok(runtime.widgets.filter(widget => widget.type === 'ChatTranslatorHub_C').every(widget => widget.released));
+  runtime.pulseHub();
+  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.pulseHub(); runtime.events.get('travel')(); runtime.pulseHub();
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
+  assert.equal(runtime.calls.filter(call => call.method === 'Create').length, 1);
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+});
+
+test('Blueprint loading, object creation and native Mod Hub registration run only on the game thread', async () => {
+  const runtime = await runtimeFixture({ hub: true, wrapped: true });
+  const nativeCalls = runtime.calls.filter(call => ['GetAsset', 'BeginDeferredActorSpawnFromClass', 'FinishSpawningActor', 'Create', 'RegisterMod'].includes(call.method));
+  assert.equal(nativeCalls.filter(call => call.method === 'GetAsset').length, 2);
+  assert.ok(nativeCalls.some(call => call.method === 'FinishSpawningActor'));
+  assert.ok(nativeCalls.some(call => call.method === 'RegisterMod'));
+  assert.ok(nativeCalls.every(call => call.onGameThread));
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+});
+
+test('missing game-thread dispatcher skips unsafe loading while F9 remains usable', async () => {
+  const runtime = await runtimeFixture({ hub: true, noGameDispatcher: true });
+  assert.ok(!runtime.calls.some(call => ['GetAsset', 'BeginDeferredActorSpawnFromClass', 'FinishSpawningActor', 'Create', 'RegisterMod'].includes(call.method)));
+  assert.ok(runtime.logs.some(line => line.includes('本次运行已停止接入')));
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+});
+
+test('native loading exception disables retries even after hub reopen and scene changes', async () => {
+  const runtime = await runtimeFixture({ hub: true, dispatchFailure: true });
+  for (let i = 0; i < 15; i++) runtime.pulseHub();
+  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.pulseHub(); runtime.events.get('travel')(); runtime.pulseHub();
+  assert.equal(runtime.calls.filter(call => call.method === 'GetAsset').length, 1);
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
+  assert.equal(runtime.requests.length, 0);
 });
 
 test('repeated messages from different players share one translation request and both enter history', async () => {
@@ -472,7 +592,7 @@ test('map travel closes F9 and releases the Mod Hub toolbar without removing per
   chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Miner', Msg: 'hello' }]);
   runtime.keys.get('F9')();
   runtime.events.get('travel')();
-  assert.ok(runtime.widgets.filter(widget => !['Slot', 'CanvasPanel', 'MenuItemList_C', 'ScrollBox', 'Border'].includes(widget.type)).every(widget => widget.released));
+  assert.ok(runtime.widgets.filter(widget => !['Slot', 'CanvasPanel', 'MenuItemList_C', 'MenuItem_C', 'ScrollBox', 'Border'].includes(widget.type) && widget.value !== 'Chat Translator · 聊天翻译').every(widget => widget.released));
   assert.equal(historyFile(runtime).messages.length, 1);
   assert.equal(runtime.requests.length, 0);
 });

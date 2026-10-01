@@ -79,7 +79,7 @@ $viewStatus.Add_Click({
   $refresh = {
     try {
       if (-not (Test-Path -LiteralPath $statusPath -PathType Leaf)) {
-        $content = '暂无运行记录。请重启游戏加载 0.2.1，再按 F7、F8 或 F9。'
+        $content = '暂无运行记录。请重启游戏加载 0.2.2，再按 F7、F8 或 F9。'
       } else {
         $report = Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $lines = @("模组版本：$($report.version)", '')

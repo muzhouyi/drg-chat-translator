@@ -122,7 +122,7 @@ function recordStatus(message, diagnostics = null) {
   while (statusHistory.length > 20) statusHistory.shift();
   if (diagnostics) lastDiagnostics = diagnostics;
   try {
-    if (typeof writeFile === "function") writeFile(STATUS_PATH, JSON.stringify({ version: "0.2.1", history: statusHistory, diagnostics: lastDiagnostics }, null, 2));
+    if (typeof writeFile === "function") writeFile(STATUS_PATH, JSON.stringify({ version: "0.2.2", history: statusHistory, diagnostics: lastDiagnostics }, null, 2));
   } catch (_) {}
 }
 function notify(message, throttle = false) {
@@ -192,7 +192,7 @@ function setConfig(patch) {
   } catch (_) { notify("翻译开关保存失败，请查看本地配置文件是否可写。"); }
 }
 const chatUI = createChatUI({
-  valid, unwrap, field, call: localCall, notice: notify, log,
+  valid, unwrap, field, call: localCall, notice: notify, log: recordStatus,
   history, rowState: id => rowStates.get(id) || {}, translateRow,
   getConfig: () => translator.getConfig(), setConfig, needsTranslation: hasEnglishText,
   controller: localController,
@@ -346,4 +346,4 @@ if (typeof NotifyOnNewObject === "function") {
 }
 chatUI.startHub();
 const startupConfig = translator.getConfig();
-recordStatus("修复版 0.2.1 已加载：F6 加载配置，F7 测试，F8 中译英，F9 聊天记录。翻译" + (startupConfig.Enabled ? "开启" : "关闭") + "，自动英→中" + (startupConfig.IncomingEnabled ? "开启" : "关闭") + "。");
+recordStatus("修复版 0.2.2 已加载：F6 加载配置，F7 测试，F8 中译英，F9 聊天记录。翻译" + (startupConfig.Enabled ? "开启" : "关闭") + "，自动英→中" + (startupConfig.IncomingEnabled ? "开启" : "关闭") + "。");

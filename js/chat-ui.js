@@ -1,17 +1,30 @@
 // Native UMG widgets; viewing history never submits translation requests.
 export function createChatUI(api) {
   let window = null, hubEntry = null, hubTimer = null, font, fontLoaded = false;
-  let follow = true, end = 0, hubWarning = false;
+  let follow = true, end = 0, hubWarning = false, hubCandidate = null, hubRetries = 0, hubFault = false;
+  const hubHooks = [];
   const pageSize = 16, classes = new Map();
   const light = { R: 0.93, G: 0.95, B: 0.98, A: 1 };
   const muted = { R: 0.64, G: 0.73, B: 0.83, A: 1 };
   function live(object) { return api.valid(object); }
   function call(object, method, ...args) { return api.unwrap(api.call(object, method, ...args)); }
+  function gameCall(object, method, ...args) {
+    // CallFunction/CallFunctionEx execute non-network functions on the JS worker.
+    // Loading Blueprint classes there can fatal in AssembleReferenceTokenStream.
+    // Never fall back to a worker call when the game-thread dispatcher is absent.
+    if (typeof __umgDispatchSync !== 'function') throw new Error('game-thread dispatcher unavailable');
+    const result = __umgDispatchSync(object, method, ...args);
+    if (result && result.__success === false) throw new Error('game-thread call failed');
+    return api.unwrap(result);
+  }
   function cls(path) {
     if (!classes.has(path)) classes.set(path, StaticFindObject(path));
     const value = classes.get(path);
     if (!value) throw new Error("Missing widget class");
     return value;
+  }
+  function withBudget(work, milliseconds = 250) {
+    return typeof __withExecBudget === "function" ? __withExecBudget(milliseconds, work) : work();
   }
   function context(owner) {
     const widgets = [], bindings = [], values = new Map();
@@ -44,7 +57,7 @@ export function createChatUI(api) {
         call(widget, "SetBackgroundColor", { R: 0.12, G: 0.18, B: 0.25, A: 1 });
         add(widget, label);
         const id = BindDelegateCallback(widget, "OnClicked", () => {
-          try { onClick(); } catch (_) { api.notice("界面操作未完成，请查看运行状态。"); }
+          try { withBudget(onClick); } catch (_) { api.notice("界面操作未完成，请查看运行状态。"); }
         });
         if (!(id >= 0)) throw new Error("Cannot bind click event");
         bindings.push(id); return { widget, label };
@@ -100,7 +113,8 @@ export function createChatUI(api) {
     view.widget = frame(ctx, line, current.views.length % 2 ? 0.045 : 0.025, 1);
     add(current.scroll, view.widget); current.views.push(view); return view;
   }
-  function refreshRows() {
+  function refreshRows() { return withBudget(refreshRowsInner); }
+  function refreshRowsInner() {
     if (!window || !window.open || !live(window.widget)) return;
     const current = window, ctx = current.ctx, rows = api.history.rows();
     if (follow) end = rows.length;
@@ -139,7 +153,7 @@ export function createChatUI(api) {
     }
     if (follow) { try { call(current.scroll, "ScrollToEnd"); } catch (_) {} }
     if (current.views.length < rows.length && !current.renderTimer) {
-      current.renderTimer = setTimeout(() => { current.renderTimer = null; renderRows(current); }, 16);
+      current.renderTimer = setTimeout(() => { current.renderTimer = null; withBudget(() => renderRows(current)); }, 16);
     }
   }
   function setInput(controller, target) {
@@ -218,67 +232,171 @@ export function createChatUI(api) {
     }
   }
   function toggle() { if (window && window.open) close(); else open(); }
-  function showHubPage(entry) {
-    if (!live(entry.hub) || !live(entry.pageContainer)) return;
-    try { call(entry.menu, "UnselectMenuItem"); } catch (_) {}
-    try { call(entry.hub, "ClearPageTabs"); } catch (_) {}
-    if (!entry.page) {
-      const ctx = context(api.field(entry.hub, "WidgetTree") || entry.hub), body = ctx.widget("VerticalBox");
-      entry.page = { ctx, body };
-      add(body, ctx.text("聊天翻译", 18));
-      add(body, ctx.text("翻译开关控制 F8、手动翻译和自动翻译；关闭后仍记录玩家聊天。", 13, muted));
-      const bar = ctx.widget("HorizontalBox"); entry.page.sync = controls(ctx, bar, true); add(body, bar);
-      add(body, ctx.text("自动英→中：翻译新收到的英文聊天。F8：将输入框内容译成英文，检查后按回车发送。", 13));
-      add(body, ctx.text("F9 查看本地记录，不自动请求接口；可点击翻译或重新翻译。清空聊天保留译文缓存。", 13));
-      add(body, ctx.button("清空聊天", clearHistory).widget);
+  function loadAdapter(name) {
+    const path = '/Game/DRGChatTranslatorHub/' + name;
+    const objectPath = path + '.' + name + '_C';
+    let type = StaticFindObject(objectPath);
+    if (!type) {
+      const library = cls('/Script/AssetRegistry.Default__AssetRegistryHelpers');
+      type = gameCall(library, 'GetAsset', {
+        ObjectPath: objectPath, PackageName: path, PackagePath: '/Game/DRGChatTranslatorHub',
+        AssetName: name + '_C', AssetClass: 'BlueprintGeneratedClass',
+      });
     }
-    entry.page.sync();
-    call(entry.pageContainer, "ClearChildren"); add(entry.pageContainer, entry.page.body);
+    if (!live(type)) throw new Error('adapter unavailable');
+    return type;
+  }
+  function buildHubPage(page) {
+    const ctx = context(api.field(page, 'WidgetTree') || page), body = ctx.widget('VerticalBox');
+    try {
+      __umgSetUserWidgetRoot(page, body);
+      add(body, ctx.text('聊天翻译', 18));
+      add(body, ctx.text('翻译开关控制 F8、手动翻译和自动翻译；关闭后仍记录玩家聊天。', 13, muted));
+      const bar = ctx.widget('HorizontalBox'), sync = controls(ctx, bar, true); add(body, bar);
+      add(body, ctx.text('自动英→中：翻译新英文。F8：将输入框内容译成英文，检查后按回车发送。', 13));
+      add(body, ctx.text('F9 查看本地记录不请求接口；可点击翻译或重新翻译。清空聊天保留缓存。', 13));
+      add(body, ctx.button('清空聊天', clearHistory).widget);
+      sync(); return { ctx, sync };
+    } catch (error) { ctx.dispose(); throw error; }
+  }
+  function same(left, right) {
+    return live(left) && live(right) && left.GetName() === right.GetName();
+  }
+  function registeredItem(host, mod) {
+    const registered = api.field(host, 'RegisteredMods');
+    const hub = api.field(host, 'Widget_ModHub'), menu = api.field(hub, 'MenuItemList'), items = api.field(menu, 'MenuItems');
+    if (!Array.isArray(registered) || !registered.some(value => same(value, mod)) || !Array.isArray(items)) return null;
+    const item = items.find(value => same(api.field(value, 'UserMod'), mod));
+    return live(item) && same(call(item, 'GetParent'), api.field(menu, 'ItemsScrollBox')) ? item : null;
   }
   function destroyHub() {
     if (!hubEntry) return;
     if (hubEntry.page) hubEntry.page.ctx.dispose();
-    hubEntry.ctx.dispose(); hubEntry = null;
+    // These are our own instances; the original Mod Hub objects remain untouched.
+    for (const object of [hubEntry.widget, hubEntry.mod]) {
+      try { if (live(object)) { call(object, 'RemoveFromParent'); object.RemoveFromRoot(); } } catch (_) {
+        try { if (live(object)) object.RemoveFromRoot(); } catch (_) {}
+      }
+    }
+    hubEntry = null;
   }
   function checkHub() {
-    let selected = null;
-    try {
-      for (const hub of (api.find("ModHub_C") || []).filter(live)) {
-        // Embedded hubs need not be viewport roots. Resolve UObject links one at a time.
-        const menu = api.field(hub, "MenuItemList"), list = api.field(menu, "ItemsScrollBox"), page = api.field(hub, "PageContainer");
-        if (live(menu) && live(list) && live(page)) selected = { hub, menu, list, page };
-        else if (!hubWarning) { hubWarning = true; api.log("Mod Hub 控件尚未就绪，将继续等待 MenuItemList / PageContainer。"); }
-      }
-    } catch (_) {}
-    if (hubEntry && (!selected || !live(hubEntry.hub) || selected.hub.GetName() !== hubEntry.hub.GetName())) destroyHub();
-    if (selected && !hubEntry) {
-      const ctx = context(api.field(selected.hub, "WidgetTree") || selected.hub);
-      try {
-        const entry = { ...selected, pageContainer: selected.page, ctx, page: null, button: null };
-        entry.button = ctx.button("聊天翻译", () => showHubPage(entry)).widget;
-        add(entry.list, entry.button); hubEntry = entry;
-        api.log("已接入 Mod Hub 左侧“聊天翻译”入口。");
-      } catch (_) { ctx.dispose(); if (!hubWarning) { hubWarning = true; api.log("Mod Hub 入口创建失败，将继续重试。"); } }
+    if (hubFault) return false;
+    let host = hubCandidate;
+    if (!live(host)) {
+      host = (api.find('Mod_ModHub_C') || []).filter(live).find(actor => live(api.field(actor, 'Widget_ModHub'))) || null;
     }
+    if (!live(host) || !live(api.field(host, 'Widget_ModHub'))) return false;
+    hubCandidate = host;
+    if (hubEntry && !same(hubEntry.host, host)) destroyHub();
     if (hubEntry) {
-      try {
-        const parent = call(hubEntry.button, "GetParent");
-        if (!live(parent) || parent.GetName() !== hubEntry.list.GetName()) add(hubEntry.list, hubEntry.button);
-        if (hubEntry.page) hubEntry.page.sync();
-      } catch (_) {}
+      if (live(registeredItem(host, hubEntry.mod))) return true;
+    }
+    const owner = FindFirstOf('GameInstance');
+    if (!live(owner)) return false;
+    let stage = '准备注册';
+    try {
+      if (!hubEntry) {
+        stage = '加载模组接口类'; const modClass = loadAdapter('ChatTranslatorHub');
+        stage = '加载设置页接口类'; const pageClass = loadAdapter('ChatTranslatorPage');
+        stage = '创建模组实例';
+        // Mod Hub's RegisteredMods, AddMenuItem and MenuItem.UserMod are Actor-typed.
+        // SetObjectPropertyByName silently refuses a plain UObject for UserMod.
+        const gameplay = cls('/Script/Engine.Default__GameplayStatics');
+        const transform = { Rotation: { X: 0, Y: 0, Z: 0, W: 1 }, Translation: { X: 0, Y: 0, Z: 0 }, Scale3D: { X: 1, Y: 1, Z: 1 } };
+        const deferred = gameCall(gameplay, 'BeginDeferredActorSpawnFromClass', owner, modClass, transform, 1, null);
+        if (!live(deferred)) throw new Error('mod Actor creation failed');
+        const mod = gameCall(gameplay, 'FinishSpawningActor', deferred, transform);
+        if (!live(mod)) throw new Error('mod instance unavailable');
+        mod.AddToRoot(); hubEntry = { host, mod, widget: null, page: null, ready: false };
+        stage = '创建设置页实例';
+        const widget = gameCall(cls('/Script/UMG.Default__WidgetBlueprintLibrary'), 'Create', owner, pageClass, api.controller());
+        if (!live(widget)) throw new Error('page instance unavailable');
+        widget.AddToRoot(); hubEntry.widget = widget;
+        stage = '生成设置页控件';
+        hubEntry.page = buildHubPage(widget);
+        stage = '写入设置页列表';
+        if (SetProperty(mod, 'TranslatorPages', [widget]) === false) throw new Error('page assignment failed');
+        // Validate compiled interface output before handing it to the native registry.
+        stage = '检查编译接口返回值';
+        const info = api.call(mod, 'GetModInfo'), pages = api.call(mod, 'GetModPages');
+        if (info.ModName !== 'Chat Translator · 聊天翻译' || !Array.isArray(pages.HubPages) || !pages.HubPages.some(value => same(value, widget))) {
+          throw new Error('adapter interface output invalid');
+        }
+        hubEntry.ready = true;
+      }
+      stage = '检查游戏内接口识别';
+      const interfaceClass = cls('/Game/_ModHub/IHubMod.IHubMod_C');
+      const implementsMod = gameCall(cls('/Script/Engine.Default__KismetSystemLibrary'), 'DoesImplementInterface', hubEntry.mod, interfaceClass);
+      if (implementsMod !== true) throw new Error('native IHubMod cast rejected');
+      stage = '调用 RegisterMod';
+      gameCall(host, 'RegisterMod', hubEntry.mod);
+      stage = '验证原生菜单条目';
+      const registered = api.field(host, 'RegisteredMods');
+      if (Array.isArray(registered) && registered.some(mod => same(mod, hubEntry.mod)) && !live(registeredItem(host, hubEntry.mod))) {
+        gameCall(api.field(host, 'Widget_ModHub'), 'AddModToUI', hubEntry.mod);
+      }
+      if (!live(registeredItem(host, hubEntry.mod))) {
+        const list = api.field(api.field(host, 'Widget_ModHub'), 'MenuItemList');
+        const mods = api.field(host, 'RegisteredMods'), items = api.field(list, 'MenuItems');
+        const ownItems = Array.isArray(items) ? items.filter(value => same(api.field(value, 'UserMod'), hubEntry.mod)) : [];
+        api.log('Mod Hub 注册诊断：模组=' + hubEntry.mod.GetName() + '；已登记=' + (Array.isArray(mods) && mods.some(value => same(value, hubEntry.mod))) + '；自己的条目=' + ownItems.length + '；条目名称=' + ownItems.map(value => String(api.field(value, 'CurrentName') || '(空)')).join(',') + '。');
+        throw new Error('native registry confirmation missing');
+      }
+      api.log('Mod Hub 原生注册已确认：聊天翻译模组、菜单条目和设置页。');
+      return true;
+    } catch (error) {
+      hubFault = true;
+      if (hubTimer) clearTimeout(hubTimer); hubTimer = null;
+      if (hubEntry && !hubEntry.ready) destroyHub();
+      if (!hubWarning) { hubWarning = true; api.log('Mod Hub 适配组件未能加载或注册，失败步骤：' + stage + '；原因：' + String(error && error.message || '未知接口异常').slice(0, 200) + '。本次运行已停止接入，请查看框架与组件安装情况。F9 仍可使用。'); }
+      return false;
     }
   }
-  function scanHub() { hubTimer = null; checkHub(); hubTimer = setTimeout(scanHub, 1000); }
+  function scanHub() {
+    if (hubFault) return;
+    return withBudget(() => {
+      hubTimer = null;
+      // Arm a bounded retry before native work; a framework interrupt cannot kill discovery forever.
+      if (++hubRetries <= 12) hubTimer = setTimeout(scanHub, 2500);
+      if (checkHub() && hubTimer) { clearTimeout(hubTimer); hubTimer = null; }
+    }, 500);
+  }
+  function requestHub(widget = null) {
+    if (hubFault) return;
+    const host = api.field(widget, 'ModBP');
+    if (live(host)) hubCandidate = host;
+    if (hubTimer) clearTimeout(hubTimer);
+    hubRetries = 0; hubTimer = setTimeout(scanHub, 100);
+  }
   return {
-    toggle, close,
-    refresh() { if (hubEntry && hubEntry.page) hubEntry.page.sync(); refreshRows(); },
+    toggle: () => withBudget(toggle), close,
+    refresh() { withBudget(() => { if (hubEntry && hubEntry.page) hubEntry.page.sync(); refreshRows(); }); },
     startHub() {
-      scanHub();
-      if (typeof RegisterBindHook === "function") {
-        try { RegisterBindHook("/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub", null, checkHub); } catch (_) {}
+      // Script modules load before the framework installs its UMG dispatcher.
+      requestHub();
+      if (typeof RegisterBindHook === 'function') {
+        for (const [path, callback] of [
+          ['/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub', requestHub],
+          ['/Game/DRGChatTranslatorHub/ChatTranslatorPage.ChatTranslatorPage_C:HubPageOpened', object => {
+            if (hubEntry && same(object, hubEntry.widget)) withBudget(hubEntry.page.sync);
+          }],
+        ]) {
+          try { const ids = RegisterBindHook(path, null, callback); if (Array.isArray(ids)) hubHooks.push(ids); } catch (_) {}
+        }
+      }
+      if (typeof NotifyOnNewObject === 'function') {
+        try { NotifyOnNewObject('ModHub_C', requestHub); } catch (_) {}
+        try { NotifyOnNewObject('Mod_ModHub_C', () => requestHub()); } catch (_) {}
       }
     },
-    resetScene() { destroyWindow(); destroyHub(); font = null; fontLoaded = false; hubWarning = false; },
-    dispose() { destroyWindow(); destroyHub(); if (hubTimer) clearTimeout(hubTimer); hubTimer = null; },
+    resetScene() {
+      destroyWindow(); destroyHub(); font = null; fontLoaded = false; hubCandidate = null;
+      requestHub();
+    },
+    dispose() {
+      destroyWindow(); destroyHub(); if (hubTimer) clearTimeout(hubTimer); hubTimer = null;
+      if (typeof UnregisterBindHook === 'function') for (const ids of hubHooks) { try { UnregisterBindHook(ids[0], ids[1]); } catch (_) {} }
+    },
   };
 }

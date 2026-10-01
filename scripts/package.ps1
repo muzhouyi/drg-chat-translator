@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $packageInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
 $version = [string]$packageInfo.version
-if ($version -ne '0.2.1') { throw 'This publication is limited to version 0.2.1.' }
+if ($version -ne '0.2.2') { throw 'This publication is limited to version 0.2.2.' }
 $releaseRoot = Join-Path $projectRoot 'release'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 $modName = "DRGChatTranslator-$version-Mintcat.zip"
@@ -21,7 +21,8 @@ function Write-Package([string]$path, $files) {
         }
     } finally { $archive.Dispose(); $stream.Dispose() }
 }
-$modFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'js') -File -Filter '*.js' | Sort-Object Name | ForEach-Object { @{ Name = 'js/' + $_.Name; Path = $_.FullName } }
+$modFiles = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'js') -File -Filter '*.js' | Sort-Object Name | ForEach-Object { @{ Name = 'js/' + $_.Name; Path = $_.FullName } })
+$modFiles += @{ Name = 'DRGChatTranslatorHub_P.pak'; Path = (Join-Path $projectRoot 'bridge/DRGChatTranslatorHub_P.pak') }
 Write-Package $modPath $modFiles
 $kitFiles = @(
     @{ Name = $modName; Path = $modPath },
@@ -34,4 +35,4 @@ Write-Package (Join-Path $releaseRoot $kitName) $kitFiles
     $hash = (Get-FileHash -LiteralPath (Join-Path $releaseRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $_"
 } | Set-Content -LiteralPath (Join-Path $releaseRoot 'SHA256SUMS.txt') -Encoding ascii
-Get-ChildItem -LiteralPath $releaseRoot -File | Select-Object Name,Length
+@($kitName, $modName, 'SHA256SUMS.txt') | ForEach-Object { Get-Item -LiteralPath (Join-Path $releaseRoot $_) } | Select-Object Name,Length
