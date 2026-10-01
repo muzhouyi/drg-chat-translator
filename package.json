@@ -1,0 +1,9 @@
+{
+  "name": "drg-chat-translator-local",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules --test tests/*.test.js"
+  }
+}
