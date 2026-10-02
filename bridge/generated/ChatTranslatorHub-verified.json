@@ -869,7 +869,7 @@
               },
               "LocalizedKey": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
-                "Value": "D4C38D83A2144330B11B2B256B536FE7"
+                "Value": "2CD4204A8DA94B23AF6510A2EFD0E5D5"
               },
               "LocalizedNamespace": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
@@ -919,7 +919,7 @@
               },
               "LocalizedKey": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
-                "Value": "8D5E62B6ABF34071A03CF2602AB54CBB"
+                "Value": "0A8AF0348A0B4146BE47D1C069C8C370"
               },
               "LocalizedNamespace": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
@@ -965,11 +965,11 @@
               "TextLiteralType": "LocalizedText",
               "LocalizedSource": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_UnicodeStringConst, UAssetAPI",
-                "Value": "0.2.2"
+                "Value": "0.2.3"
               },
               "LocalizedKey": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
-                "Value": "60A24F780D6048BBB6707B1D7D82058B"
+                "Value": "D5C5746AE21045A382D653F8CE7057F8"
               },
               "LocalizedNamespace": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
@@ -1506,7 +1506,7 @@
       "NameCount": 61
     }
   ],
-  "PackageGuid": "{7BCEB70B-5ADB-4DB6-AA1A-3380FC34B3AC}",
+  "PackageGuid": "{D5D9C521-0BA3-4722-8CFC-4FB6225B8D98}",
   "PersistentGuid": "{00000000-0000-0000-0000-000000000000}",
   "RecordedEngineVersion": {
     "$type": "UAssetAPI.FEngineVersion, UAssetAPI",

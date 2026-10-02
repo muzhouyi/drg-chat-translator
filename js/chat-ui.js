@@ -2,12 +2,21 @@
 export function createChatUI(api) {
   let window = null, hubEntry = null, hubTimer = null, font, fontLoaded = false;
   let follow = true, end = 0, hubWarning = false, hubCandidate = null, hubRetries = 0, hubFault = false;
-  const hubHooks = [];
-  const pageSize = 16, classes = new Map();
+  let pageSize = 16;
+  let sceneChanging = false;
+  let pendingInputRestore = null, openingStage = '';
+  const retiredWindows = [];
+  const classes = new Map();
   const light = { R: 0.93, G: 0.95, B: 0.98, A: 1 };
   const muted = { R: 0.64, G: 0.73, B: 0.83, A: 1 };
   function live(object) { return api.valid(object); }
-  function call(object, method, ...args) { return api.unwrap(api.call(object, method, ...args)); }
+  function call(object, method, ...args) {
+    if (typeof __umgDispatchAsync === 'function' && /^(?:Set|ScrollTo|ClearChildren|RemoveFrom|K2_DestroyActor)/.test(method)) {
+      __umgDispatchAsync(object, method, ...args); return true;
+    }
+    if (typeof __umgDispatchSync === 'function' && /^(?:AddChild|AddToViewport|GetText|GetParent|IsPressed)/.test(method)) return gameCall(object, method, ...args);
+    return api.unwrap(api.call(object, method, ...args));
+  }
   function gameCall(object, method, ...args) {
     // CallFunction/CallFunctionEx execute non-network functions on the JS worker.
     // Loading Blueprint classes there can fatal in AssembleReferenceTokenStream.
@@ -27,14 +36,29 @@ export function createChatUI(api) {
     return typeof __withExecBudget === "function" ? __withExecBudget(milliseconds, work) : work();
   }
   function context(owner) {
-    const widgets = [], bindings = [], values = new Map();
+    const widgets = [], bindings = [], values = new Map(), roots = new Map();
+    const layout = api.getLayout();
     if (!fontLoaded) { fontLoaded = true; font = api.font && api.font(); }
     const ctx = {
-      owner,
+      owner, layout, disposed: false,
+      bind(widget, event, handler) {
+        openingStage = '绑定控件事件 ' + event;
+        const id = BindDelegateCallback(widget, event, (...args) => {
+          // Return from the engine delegate before altering its widget tree.
+          setTimeout(() => {
+            if (ctx.disposed || !live(widget)) return;
+            try { withBudget(() => handler(...args)); } catch (_) { api.notice('界面操作未完成；输入内容已保留。'); }
+          }, 0);
+        });
+        if (!(id >= 0)) {
+          const error = new Error('Cannot bind ' + event); error.code = 'DELEGATE_UNAVAILABLE'; throw error;
+        }
+        bindings.push(id); return id;
+      },
       widget(type) {
         const widget = NewUObject(cls("/Script/UMG." + type), owner);
         if (!live(widget)) throw new Error("Cannot create widget");
-        widget.AddToRoot(); widgets.push(widget); return widget;
+        widget.AddToRoot(); roots.set(widget, widget.RemoveFromRoot.bind(widget)); widgets.push(widget); return widget;
       },
       set(widget, method, value) {
         let saved = values.get(widget);
@@ -43,7 +67,7 @@ export function createChatUI(api) {
         if (saved.get(method) === encoded) return;
         call(widget, method, value); saved.set(method, encoded);
       },
-      text(value, size = 13, color = light) {
+      text(value, size = layout.FontSize, color = light) {
         const widget = ctx.widget("TextBlock");
         ctx.set(widget, "SetText", String(value));
         call(widget, "SetAutoWrapText", true);
@@ -53,22 +77,33 @@ export function createChatUI(api) {
         return widget;
       },
       button(caption, onClick) {
-        const widget = ctx.widget("Button"), label = ctx.text(caption, 12);
+        const widget = ctx.widget("Button"), label = ctx.text(caption, layout.ButtonFontSize);
         call(widget, "SetBackgroundColor", { R: 0.12, G: 0.18, B: 0.25, A: 1 });
         add(widget, label);
-        const id = BindDelegateCallback(widget, "OnClicked", () => {
-          try { withBudget(onClick); } catch (_) { api.notice("界面操作未完成，请查看运行状态。"); }
-        });
-        if (!(id >= 0)) throw new Error("Cannot bind click event");
-        bindings.push(id); return { widget, label };
+        ctx.bind(widget, "OnClicked", onClick);
+        return { widget, label };
       },
-      dispose() {
-        for (const id of bindings) { try { UnbindDelegateCallback(id); } catch (_) {} }
-        for (const widget of widgets.slice().reverse()) {
-          try { if (live(widget)) call(widget, "RemoveFromParent"); } catch (_) {}
-          try { if (live(widget)) widget.RemoveFromRoot(); } catch (_) {}
-        }
-        bindings.length = 0; widgets.length = 0; values.clear();
+      releaseRoots() {
+        // After the native widget tree owns these children, explicit roots would
+        // keep their outer page, owning controller and old world alive on travel.
+        // Resolve the native method while rooted/alive. A JS UObject IsValid()
+        // only probes readable memory; looking up methods on GC'd wrappers can
+        // raise an SEH that bypasses JavaScript catch/finally entirely.
+        const releases = [...roots.values()];
+        roots.clear();
+        for (const release of releases) { try { release(); } catch (_) {} }
+      },
+      dispose(release = true) {
+        if (ctx.disposed) return;
+        ctx.disposed = true;
+        // Take IDs out of our state BEFORE native work. Retrying IDs already
+        // removed by the framework trips its Delegate circuit breaker.
+        const ids = bindings.splice(0);
+        widgets.length = 0; values.clear();
+        for (const id of ids) { try { UnbindDelegateCallback(id); } catch (_) {} }
+        // The tree owns children. Do not probe or enqueue RemoveFromParent for
+        // each old child: LoadMap events reach this worker AFTER native GC too.
+        if (release) ctx.releaseRoots();
       },
     };
     return ctx;
@@ -76,7 +111,8 @@ export function createChatUI(api) {
   function add(parent, child, fill = null) {
     const slot = call(parent, "AddChild", child);
     if (live(slot)) {
-      try { call(slot, "SetPadding", { Left: 4, Top: 2, Right: 4, Bottom: 2 }); } catch (_) {}
+      const gap = window ? window.ctx.layout.Gap : 2;
+      try { call(slot, "SetPadding", { Left: gap, Top: gap, Right: gap, Bottom: gap }); } catch (_) {}
       if (fill != null) { try { call(slot, "SetSize", { SizeRule: 1, Value: fill }); } catch (_) {} }
     }
     return slot;
@@ -107,13 +143,20 @@ export function createChatUI(api) {
   function makeRow(current) {
     const ctx = current.ctx, line = ctx.widget("HorizontalBox");
     const view = { row: null, meta: ctx.text("", 11, muted), source: ctx.text(""), translation: ctx.text("") };
-    add(line, sized(ctx, view.meta, 108)); add(line, view.source, 1); add(line, view.translation, 1);
+    add(line, sized(ctx, view.meta, ctx.layout.MetaWidth)); add(line, view.source, ctx.layout.SourceWeight); add(line, view.translation, ctx.layout.TranslationWeight);
     view.action = ctx.button("", () => { if (view.row) api.translateRow(view.row.id, !!view.row.translation); });
-    add(line, sized(ctx, view.action.widget, 70));
-    view.widget = frame(ctx, line, current.views.length % 2 ? 0.045 : 0.025, 1);
+    add(line, sized(ctx, view.action.widget, ctx.layout.ActionWidth));
+    view.widget = frame(ctx, line, current.views.length % 2 ? 0.045 : 0.025, ctx.layout.RowPadding);
     add(current.scroll, view.widget); current.views.push(view); return view;
   }
-  function refreshRows() { return withBudget(refreshRowsInner); }
+  function refreshRows() {
+    if (!window || !window.open || window.refreshTimer) return;
+    const current = window;
+    current.refreshTimer = setTimeout(() => {
+      current.refreshTimer = null;
+      if (window === current && current.open) withBudget(refreshRowsInner, 1000);
+    }, 16);
+  }
   function refreshRowsInner() {
     if (!window || !window.open || !live(window.widget)) return;
     const current = window, ctx = current.ctx, rows = api.history.rows();
@@ -162,13 +205,24 @@ export function createChatUI(api) {
     if (target) call(library, "SetInputMode_GameAndUIEx", controller, target, 0, false);
     else call(library, "SetInputMode_GameOnly", controller);
   }
-  function close() {
+  function close(travel = false) {
+    // Native delegates pass (owner, params). Only the explicit internal boolean
+    // may select travel cleanup; a button UObject must never do so.
+    travel = travel === true;
     if (!window || !window.open) return;
     const current = window; current.open = false;
+    if (travel) { if (current.dragTimer) clearTimeout(current.dragTimer); current.dragTimer = null; current.drag = null; }
+    else stopDrag(current);
+    if (current.refreshTimer) clearTimeout(current.refreshTimer); current.refreshTimer = null;
     if (current.renderTimer) clearTimeout(current.renderTimer); current.renderTimer = null;
-    try { if (live(current.widget)) call(current.widget, "RemoveFromViewport"); } catch (_) {}
-    if (live(current.controller) && current.inputChanged) {
-      const target = api.restoreTarget && api.restoreTarget();
+    // F9 has GameInstance-owned widgets, so they can stay pinned until the
+    // post-load tick. Never queue a raw pointer then unroot it during native GC.
+    if (!travel) { try { gameCall(current.widget, "RemoveFromViewport"); } catch (_) {} }
+    if (travel && current.inputChanged) {
+      pendingInputRestore = { identity: current.controllerIdentity, cursor: current.cursorBefore,
+        look: current.ignoredLook, move: current.ignoredMove };
+    } else if (!travel && live(current.controller) && current.inputChanged) {
+      const target = !travel && api.restoreTarget && api.restoreTarget();
       try { setInput(current.controller, target); } catch (_) {}
       try { SetProperty(current.controller, "bShowMouseCursor", !!target || current.cursorBefore); } catch (_) {}
       try { if (current.ignoredLook) call(current.controller, "SetIgnoreLookInput", false); } catch (_) {}
@@ -176,27 +230,38 @@ export function createChatUI(api) {
     }
     current.inputChanged = false; current.ignoredLook = false; current.ignoredMove = false;
   }
-  function destroyWindow() {
-    close(); if (!window) return;
-    if (window.unsubscribe) window.unsubscribe();
-    window.ctx.dispose(); window = null;
+  function destroyWindow(travel = false) {
+    close(travel); if (!window) return;
+    const current = window; window = null;
+    if (current.unsubscribe) current.unsubscribe();
+    if (travel) retiredWindows.push(current);
+    current.ctx.dispose(!travel);
   }
   function buildWindow(owner) {
     const ctx = context(owner), current = { ctx, open: false, views: [], visibleRows: [], renderTimer: null };
     window = current;
+    pageSize = ctx.layout.PageSize;
     current.widget = ctx.widget("UserWidget"); SetProperty(current.widget, "bIsFocusable", true);
     const canvas = ctx.widget("CanvasPanel"), body = ctx.widget("VerticalBox");
     __umgSetUserWidgetRoot(current.widget, canvas);
     const header = ctx.widget("HorizontalBox");
-    add(header, ctx.text("聊天记录  ·  原文与中文译文", 16), 1);
+    const title = ctx.button('聊天翻译  ·  按住这里拖动', () => {});
+    current.dragButton = title.widget;
+    ctx.bind(title.widget, 'OnPressed', () => startDrag(current));
+    ctx.bind(title.widget, 'OnReleased', () => stopDrag(current));
+    add(header, title.widget, 1);
+    add(header, ctx.button('导出聊天', () => {
+      try { ctx.set(current.feedback, 'SetText', api.exportChat()); }
+      catch (_) { ctx.set(current.feedback, 'SetText', '导出失败，请检查本机目录是否可写。'); }
+    }).widget);
     add(header, ctx.button("清空聊天", clearHistory).widget);
-    add(header, ctx.button("关闭（F9）", close).widget); add(body, header);
+    add(header, ctx.button("关闭（F9）", () => close()).widget); add(body, header);
     const bar = ctx.widget("HorizontalBox"); current.syncControls = controls(ctx, bar); add(body, bar);
     add(body, ctx.text("查看不调用接口；右侧点击翻译。自动英→中仅处理新聊天。", 11, muted));
     const columns = ctx.widget("HorizontalBox");
-    add(columns, sized(ctx, ctx.text("时间 / 玩家", 11, muted), 108));
-    add(columns, ctx.text("原文", 11, muted), 1); add(columns, ctx.text("中文译文", 11, muted), 1);
-    add(columns, sized(ctx, ctx.text("操作", 11, muted), 70)); add(body, columns);
+    add(columns, sized(ctx, ctx.text("时间 / 玩家", 11, muted), ctx.layout.MetaWidth));
+    add(columns, ctx.text("原文", 11, muted), ctx.layout.SourceWeight); add(columns, ctx.text("中文译文", 11, muted), ctx.layout.TranslationWeight);
+    add(columns, sized(ctx, ctx.text("操作", 11, muted), ctx.layout.ActionWidth)); add(body, columns);
     current.scroll = ctx.widget("ScrollBox"); add(body, current.scroll, 1);
     current.empty = ctx.text("还没有玩家聊天。收到消息后实时显示。", 12, muted); add(current.scroll, current.empty);
     const footer = ctx.widget("HorizontalBox");
@@ -206,29 +271,138 @@ export function createChatUI(api) {
     current.followLabel = followButton.label; add(footer, followButton.widget);
     current.pageLabel = ctx.text("", 11, muted); add(footer, current.pageLabel, 1);
     add(footer, ctx.button("最新聊天", () => { follow = true; refreshRows(); }).widget); add(body, footer);
-    const slot = call(canvas, "AddChildToCanvas", frame(ctx, body));
+    current.feedback = ctx.text('输入后按回车或发送；翻译成英文只填入草稿，检查后发送。', 11, muted);
+    add(body, current.feedback);
+    const compose = ctx.widget('HorizontalBox');
+    current.input = ctx.widget('EditableTextBox');
+    call(current.input, 'SetHintText', '输入聊天内容（先完成输入法选字）');
+    if (font) call(current.input, 'SetFont', { ...font, Size: ctx.layout.FontSize });
+    add(compose, current.input, 1);
+    ctx.bind(current.input, 'OnTextCommitted', (_object, params) => {
+      const commit = params && params[1];
+      if (commit === 1 || commit === '1' || commit === 'OnEnter' || commit === 'ETextCommit::OnEnter') sendDraft(current);
+    });
+    add(compose, ctx.button('翻译成英文', () => translateDraft(current)).widget);
+    add(compose, ctx.button('发送', () => sendDraft(current)).widget); add(body, compose);
+    current.panel = frame(ctx, body);
+    const slot = call(canvas, "AddChildToCanvas", current.panel);
     if (!live(slot)) throw new Error("Cannot mount UI");
-    call(slot, "SetAnchors", { Minimum: { X: 0.16, Y: 0.2 }, Maximum: { X: 0.84, Y: 0.8 } });
+    current.slot = slot; applyPosition(current);
     call(slot, "SetOffsets", { Left: 0, Top: 0, Right: 0, Bottom: 0 });
     call(slot, "SetAutoSize", false); call(slot, "SetZOrder", 100);
     current.unsubscribe = api.history.subscribe(refreshRows);
     return current;
   }
+  function applyPosition(current) {
+    const l = current.ctx.layout;
+    call(current.slot, 'SetAnchors', { Minimum: { X: l.X / 100, Y: l.Y / 100 }, Maximum: { X: (l.X + l.Width) / 100, Y: (l.Y + l.Height) / 100 } });
+  }
+  function mouse(controller, viewport = null) {
+    const position = api.call(controller, 'GetMousePosition');
+    viewport = viewport || api.call(controller, 'GetViewportSize');
+    if (position.ReturnValue !== true || !(viewport.SizeX > 0 && viewport.SizeY > 0)) throw new Error('Mouse position unavailable');
+    return { x: Number(position.LocationX) / viewport.SizeX * 100, y: Number(position.LocationY) / viewport.SizeY * 100 };
+  }
+  function startDrag(current) {
+    if (!current.open) return;
+    stopDrag(current);
+    const viewport = api.call(current.controller, 'GetViewportSize');
+    const at = mouse(current.controller, viewport);
+    let scale = 1;
+    try { scale = Number(gameCall(cls('/Script/UMG.Default__WidgetLayoutLibrary'), 'GetViewportScale', current.widget)) || 1; } catch (_) {}
+    current.drag = { at, viewport, scale, checkedAt: 0, x: current.ctx.layout.X, y: current.ctx.layout.Y };
+    const pulse = () => {
+      current.dragTimer = null;
+      if (!current.open || !current.drag || !live(current.controller)) return stopDrag(current);
+      try {
+        const drag = current.drag;
+        // OnReleased normally stops the drag. This low-rate read also catches
+        // lost capture/focus without a synchronous game-thread wait every frame.
+        if (Date.now() - drag.checkedAt > 150) {
+          drag.checkedAt = Date.now();
+          if (api.unwrap(api.call(current.dragButton, 'IsPressed')) !== true) return stopDrag(current);
+        }
+        const point = mouse(current.controller, drag.viewport), layout = current.ctx.layout;
+        layout.X = Math.max(0, Math.min(100 - layout.Width, drag.x + point.x - drag.at.x));
+        layout.Y = Math.max(0, Math.min(100 - layout.Height, drag.y + point.y - drag.at.y));
+        // Render translation avoids remeasuring every chat row on each move.
+        current.ctx.set(current.panel, 'SetRenderTranslation', { X: (layout.X - drag.x) / 100 * drag.viewport.SizeX / drag.scale, Y: (layout.Y - drag.y) / 100 * drag.viewport.SizeY / drag.scale });
+        current.dragTimer = setTimeout(() => withBudget(pulse), 16);
+      } catch (_) { stopDrag(current); }
+    };
+    current.dragTimer = setTimeout(() => withBudget(pulse), 16);
+  }
+  function stopDrag(current) {
+    if (current.dragTimer) clearTimeout(current.dragTimer); current.dragTimer = null;
+    if (!current.drag) return;
+    current.drag = null;
+    if (live(current.panel) && live(current.slot)) {
+      applyPosition(current); current.ctx.set(current.panel, 'SetRenderTranslation', { X: 0, Y: 0 });
+    }
+    try { api.saveLayout(current.ctx.layout); } catch (_) { api.notice('位置未能保存，本次仍可拖动。'); }
+  }
+  function draftText(current) { return String(call(current.input, 'GetText') || ''); }
+  function sendDraft(current) {
+    if (!current.open || current.translating || current.sending) return;
+    const source = draftText(current);
+    let sent;
+    try {
+      sent = api.sendChat(source);
+    } catch (error) { current.ctx.set(current.feedback, 'SetText', String(error.message || '发送失败，输入已保留。')); return; }
+    current.sending = true;
+    current.ctx.set(current.feedback, 'SetText', '等待游戏聊天回显…');
+    Promise.resolve(sent).then(() => withBudget(() => {
+      if (window !== current || !live(current.input)) return;
+      if (draftText(current) === source) call(current.input, 'SetText', '');
+      current.ctx.set(current.feedback, 'SetText', '游戏已确认收到消息。');
+    }), error => withBudget(() => {
+      if (window === current) current.ctx.set(current.feedback, 'SetText', String(error.message || '发送失败，草稿保留。'));
+    })).then(() => { current.sending = false; }, () => {
+      current.sending = false; api.log('F9 发送后的界面更新未完成；消息记录保留。');
+    });
+    call(current.input, 'SetKeyboardFocus');
+  }
+  function translateDraft(current) {
+    if (!current.open || current.translating) return;
+    const source = draftText(current);
+    if (!source.trim()) return current.ctx.set(current.feedback, 'SetText', '请先输入需要翻译的文字。');
+    current.translating = true;
+    current.ctx.set(current.feedback, 'SetText', '正在翻译…原文保留；完成后检查并发送。');
+    api.translateDraft(source).then(result => withBudget(() => {
+      if (window !== current || !current.open || !live(current.input)) return;
+      if (draftText(current) !== source) return current.ctx.set(current.feedback, 'SetText', '输入已变化，保留当前草稿。');
+      call(current.input, 'SetText', result);
+      current.ctx.set(current.feedback, 'SetText', '英文已填入草稿；检查后按发送。');
+    }), error => withBudget(() => {
+      if (window === current && current.open) current.ctx.set(current.feedback, 'SetText', error.userMessage || '翻译失败，原文保留。');
+    })).then(() => { current.translating = false; }, () => {
+      current.translating = false; api.log('F9 翻译后的界面更新未完成；缓存保留。');
+    });
+  }
   function open() {
+    if (sceneChanging) return api.notice('正在切换地图，请加载完成后再打开 F9。');
     const owner = FindFirstOf("GameInstance"), controller = api.controller();
     if (!live(owner) || !live(controller)) return api.notice("请先进入空间站或任务，再按 F9。");
     try {
+      openingStage = '创建窗口';
       if (window && !live(window.widget)) destroyWindow();
       const current = window || buildWindow(owner);
       current.controller = controller; current.open = true;
+      current.controllerIdentity = typeof controller.GetAddress === 'function' ? String(controller.GetAddress()) : controller.GetName();
       current.cursorBefore = !!api.field(controller, "bShowMouseCursor");
+      openingStage = '显示窗口';
       call(current.widget, "AddToViewport", 2000); current.inputChanged = true;
       setInput(controller, current.widget); SetProperty(controller, "bShowMouseCursor", true);
       call(controller, "SetIgnoreLookInput", true); current.ignoredLook = true;
       call(controller, "SetIgnoreMoveInput", true); current.ignoredMove = true;
-      follow = true; end = api.history.rows().length; refreshRows();
-    } catch (_) {
-      destroyWindow(); api.notice("聊天记录窗口未能打开，请查看运行状态并确认 UE4SS 框架已启用。");
+      follow = true; end = api.history.rows().length; refreshRowsInner();
+    } catch (error) {
+      const stage = openingStage;
+      destroyWindow();
+      api.log('F9 窗口打开失败，步骤：' + stage + '；分类：' + (error && (error.code || error.name) || 'UNKNOWN') + '。');
+      api.notice(error && error.code === 'DELEGATE_UNAVAILABLE'
+        ? '界面按钮接口不可用，可能已被框架停用；请完全退出并重开游戏，F6 无法恢复。'
+        : '聊天记录窗口未能打开，失败步骤：' + stage + '。具体诊断已写入运行状态。');
     }
   }
   function toggle() { if (window && window.open) close(); else open(); }
@@ -255,7 +429,8 @@ export function createChatUI(api) {
       const bar = ctx.widget('HorizontalBox'), sync = controls(ctx, bar, true); add(body, bar);
       add(body, ctx.text('自动英→中：翻译新英文。F8：将输入框内容译成英文，检查后按回车发送。', 13));
       add(body, ctx.text('F9 查看本地记录不请求接口；可点击翻译或重新翻译。清空聊天保留缓存。', 13));
-      add(body, ctx.button('清空聊天', clearHistory).widget);
+      const actions = ctx.widget('HorizontalBox');
+      add(actions, ctx.button('清空聊天', clearHistory).widget); add(body, actions);
       sync(); return { ctx, sync };
     } catch (error) { ctx.dispose(); throw error; }
   }
@@ -269,19 +444,25 @@ export function createChatUI(api) {
     const item = items.find(value => same(api.field(value, 'UserMod'), mod));
     return live(item) && same(call(item, 'GetParent'), api.field(menu, 'ItemsScrollBox')) ? item : null;
   }
-  function destroyHub() {
+  function destroyHub(travel = false) {
     if (!hubEntry) return;
-    if (hubEntry.page) hubEntry.page.ctx.dispose();
-    // These are our own instances; the original Mod Hub objects remain untouched.
-    for (const object of [hubEntry.widget, hubEntry.mod]) {
-      try { if (live(object)) { call(object, 'RemoveFromParent'); object.RemoveFromRoot(); } } catch (_) {
-        try { if (live(object)) object.RemoveFromRoot(); } catch (_) {}
-      }
+    const current = hubEntry; hubEntry = null;
+    if (current.page) current.page.ctx.dispose();
+    if (current.releasePageRoot) {
+      const release = current.releasePageRoot; current.releasePageRoot = null;
+      try { release(); } catch (_) {}
     }
-    hubEntry = null;
+    // Scene actors are already retained by their world/native registry. They
+    // must not be independently rooted across level teardown.
+    // World teardown owns this Actor/page. Never revisit their wrappers after
+    // travel; an accessible address can already belong to a different object.
+    if (!travel) {
+      try { if (live(current.widget)) call(current.widget, 'RemoveFromParent'); } catch (_) {}
+      try { if (live(current.mod)) call(current.mod, 'K2_DestroyActor'); } catch (_) {}
+    }
   }
   function checkHub() {
-    if (hubFault) return false;
+    if (hubFault || sceneChanging) return false;
     let host = hubCandidate;
     if (!live(host)) {
       host = (api.find('Mod_ModHub_C') || []).filter(live).find(actor => live(api.field(actor, 'Widget_ModHub'))) || null;
@@ -308,11 +489,11 @@ export function createChatUI(api) {
         if (!live(deferred)) throw new Error('mod Actor creation failed');
         const mod = gameCall(gameplay, 'FinishSpawningActor', deferred, transform);
         if (!live(mod)) throw new Error('mod instance unavailable');
-        mod.AddToRoot(); hubEntry = { host, mod, widget: null, page: null, ready: false };
+        hubEntry = { host, mod, widget: null, page: null, ready: false, releasePageRoot: null };
         stage = '创建设置页实例';
         const widget = gameCall(cls('/Script/UMG.Default__WidgetBlueprintLibrary'), 'Create', owner, pageClass, api.controller());
         if (!live(widget)) throw new Error('page instance unavailable');
-        widget.AddToRoot(); hubEntry.widget = widget;
+        widget.AddToRoot(); hubEntry.widget = widget; hubEntry.releasePageRoot = widget.RemoveFromRoot.bind(widget);
         stage = '生成设置页控件';
         hubEntry.page = buildHubPage(widget);
         stage = '写入设置页列表';
@@ -344,6 +525,8 @@ export function createChatUI(api) {
         throw new Error('native registry confirmation missing');
       }
       api.log('Mod Hub 原生注册已确认：聊天翻译模组、菜单条目和设置页。');
+      hubEntry.page.ctx.releaseRoots();
+      if (hubEntry.releasePageRoot) { const release = hubEntry.releasePageRoot; hubEntry.releasePageRoot = null; release(); }
       return true;
     } catch (error) {
       hubFault = true;
@@ -354,7 +537,7 @@ export function createChatUI(api) {
     }
   }
   function scanHub() {
-    if (hubFault) return;
+    if (hubFault || sceneChanging) return;
     return withBudget(() => {
       hubTimer = null;
       // Arm a bounded retry before native work; a framework interrupt cannot kill discovery forever.
@@ -363,40 +546,58 @@ export function createChatUI(api) {
     }, 500);
   }
   function requestHub(widget = null) {
-    if (hubFault) return;
-    const host = api.field(widget, 'ModBP');
-    if (live(host)) hubCandidate = host;
+    if (hubFault || sceneChanging) return;
+    // New-object notifications can arrive before construction finishes. Inspect
+    // the registry only in the delayed scan, never in the native callback.
     if (hubTimer) clearTimeout(hubTimer);
     hubRetries = 0; hubTimer = setTimeout(scanHub, 100);
   }
   return {
-    toggle: () => withBudget(toggle), close,
-    refresh() { withBudget(() => { if (hubEntry && hubEntry.page) hubEntry.page.sync(); refreshRows(); }); },
+    toggle: () => withBudget(toggle, 1500), close,
+    translateInput() { if (!window || !window.open) return false; withBudget(() => translateDraft(window)); return true; },
+    refresh() { withBudget(() => { if (hubEntry && hubEntry.page) hubEntry.page.sync(); if (window && window.open) window.syncControls(); refreshRows(); }); },
+    reloadLayout() { destroyWindow(); },
     startHub() {
       // Script modules load before the framework installs its UMG dispatcher.
       requestHub();
-      if (typeof RegisterBindHook === 'function') {
-        for (const [path, callback] of [
-          ['/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub', requestHub],
-          ['/Game/DRGChatTranslatorHub/ChatTranslatorPage.ChatTranslatorPage_C:HubPageOpened', object => {
-            if (hubEntry && same(object, hubEntry.widget)) withBudget(hubEntry.page.sync);
-          }],
-        ]) {
-          try { const ids = RegisterBindHook(path, null, callback); if (Array.isArray(ids)) hubHooks.push(ids); } catch (_) {}
-        }
-      }
+      // The installed bridge faults while marshaling Open Hub's parameters.
+      // Startup/new-widget discovery suffices; avoid that reflection hook.
       if (typeof NotifyOnNewObject === 'function') {
         try { NotifyOnNewObject('ModHub_C', requestHub); } catch (_) {}
         try { NotifyOnNewObject('Mod_ModHub_C', () => requestHub()); } catch (_) {}
       }
     },
     resetScene() {
-      destroyWindow(); destroyHub(); font = null; fontLoaded = false; hubCandidate = null;
+      sceneChanging = true;
+      if (hubTimer) clearTimeout(hubTimer); hubTimer = null;
+      destroyWindow(true); destroyHub(true); font = null; fontLoaded = false; hubCandidate = null;
+      classes.clear();
+    },
+    resumeScene() {
+      sceneChanging = false; hubFault = false; hubWarning = false;
+      for (const current of retiredWindows.splice(0)) {
+        try { gameCall(current.widget, 'RemoveFromViewport'); }
+        catch (_) { retiredWindows.push(current); continue; }
+        current.ctx.releaseRoots();
+      }
+      const restore = pendingInputRestore; pendingInputRestore = null;
+      if (restore) {
+        const controller = api.controller();
+        if (live(controller)) {
+          const identity = typeof controller.GetAddress === 'function' ? String(controller.GetAddress()) : controller.GetName();
+          // Seamless travel can retain the controller; otherwise the old
+          // controller/input state was destroyed by the engine already.
+          if (identity === restore.identity) {
+            try { setInput(controller, null); SetProperty(controller, 'bShowMouseCursor', restore.cursor); } catch (_) {}
+            try { if (restore.look) call(controller, 'SetIgnoreLookInput', false); } catch (_) {}
+            try { if (restore.move) call(controller, 'SetIgnoreMoveInput', false); } catch (_) {}
+          }
+        }
+      }
       requestHub();
     },
     dispose() {
       destroyWindow(); destroyHub(); if (hubTimer) clearTimeout(hubTimer); hubTimer = null;
-      if (typeof UnregisterBindHook === 'function') for (const ids of hubHooks) { try { UnregisterBindHook(ids[0], ids[1]); } catch (_) {} }
     },
   };
 }

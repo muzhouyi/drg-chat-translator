@@ -3,6 +3,8 @@ node_modules/
 config.json
 chat-history.json
 status.json
+ui-layout.json
+chat-export-*.txt
 .env
 .env.*
 *.log

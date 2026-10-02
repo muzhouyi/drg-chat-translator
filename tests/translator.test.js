@@ -4,6 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { createTranslator, describeError } from "../js/core.js";
 import { createChatHistory, isPlayerChat } from "../js/history.js";
+import { normalizeLayout } from "../js/layout.js";
 
 const config = { ApiKey: "test-key-local-only" };
 const ok = content => ({ ok: true, json: async () => ({ choices: [{ message: { content } }] }) });
@@ -74,10 +75,15 @@ test("overlong translated output fails instead of silently truncating it", async
 });
 
 async function runtimeFixture(options = {}) {
-  const events = new Map(), keys = new Map(), calls = [], requests = [], logs = [], files = new Map(), widgets = [], uiCallbacks = [], bindings = new Map(), lookups = [], hubCallbacks = [], notifications = new Map();
+  const events = new Map(), keys = new Map(), calls = [], requests = [], logs = [], files = new Map(), widgets = [], uiCallbacks = [], bindings = new Map(), lookups = [], hubCallbacks = [], notifications = new Map(), deferred = [];
+  let inNativeEvent = false;
+  const flushDeferred = () => { while (deferred.length) deferred.shift()(); };
+  const invokeNativeEvent = (handler, args) => { inNativeEvent = true; try { handler(...args); } finally { inNativeEvent = false; } flushDeferred(); };
   let chatScans = 0, hubScans = 0, pageCreates = 0, onGameThread = false;
+  let gameThreadAvailable = true, blockingWaits = 0, interfaceRevision = 0;
   let fixtureConfig = { ...config, ...(options.config || {}) };
   let bindingSequence = 0;
+  const unbindAttempts = [], staleReads = [];
   let hub = null;
   const owner = { IsValid: () => true, GetName: () => "GameInstance_0" };
   let now = Date.now();
@@ -85,23 +91,31 @@ async function runtimeFixture(options = {}) {
   const input = { value: "先别叫空降舱", IsValid: () => true, GetName: () => "NewChatEdit" };
   const panel = { IsValid: () => true, GetName: () => "ChatMessages" };
   const state = { IsValid: () => true, GetName: () => "PlayerState", name: "Me" };
-  const controller = { IsValid: () => true, GetName: () => "LocalPC", PlayerState: state };
+  const controller = { IsValid: () => true, GetName: () => "LocalPC", PlayerState: state,
+    moveBlocks: options.moveBlocks || 0, lookBlocks: options.lookBlocks || 0 };
   const chat = { IsValid: () => true, GetName: () => "HUD_Chat_C_0", IsChatOpen: options.open !== false, ChatMessages: panel,
     [options.inputName || "NewChatEdit"]: input };
   const result = value => options.wrapped ? { ReturnValue: value, __success: true } : value;
-  const newObject = type => {
+  const newObject = (type, outer = null) => {
     const index = widgets.length;
-    const widget = { type, children: [], IsValid: () => true, GetName: () => type + "_" + index,
-      IsA: name => name === type, AddToRoot: () => {}, RemoveFromRoot: () => { widget.released = true; } };
+    const widget = { type, outer, children: [], rooted: false,
+      IsA: name => name === type, AddToRoot: () => { widget.rooted = true; }, RemoveFromRoot: () => { widget.rooted = false; } };
+    for (const name of ['IsValid', 'GetName', 'RemoveFromRoot']) {
+      const method = name === 'IsValid' ? () => !widget.destroyed : name === 'GetName' ? () => type + '_' + index : widget.RemoveFromRoot;
+      Object.defineProperty(widget, name, { get() {
+        if (widget.expired) { staleReads.push({ widget, name }); throw new Error('stale UObject method lookup'); }
+        return method;
+      } });
+    }
     widgets.push(widget); return widget;
   };
   const commonCall = (object, method, ...args) => {
-    calls.push({ object, method, args, onGameThread });
+    calls.push({ object, method, args, onGameThread, inNativeEvent });
     if (['GetAsset', 'BeginDeferredActorSpawnFromClass', 'FinishSpawningActor', 'Create', 'RegisterMod', 'AddModToUI'].includes(method) && !onGameThread) {
       throw new Error('native operation on non-game thread');
     }
     if (method === 'GetAsset' && options.dispatchFailure) throw new Error('native loading failed');
-    if (method === 'DoesImplementInterface') return result(!options.interfaceRejected);
+    if (method === 'DoesImplementInterface') return result(!options.interfaceRejected && args[1]?.revision === interfaceRevision);
     if (method === 'GetAsset') {
       if (options.adapterUnavailable) return result(null);
       return result({ type: args[0].AssetName, IsValid: () => true, GetName: () => args[0].AssetName });
@@ -145,7 +159,8 @@ async function runtimeFixture(options = {}) {
     if (method === "AddChild" || method === "AddChildToCanvas") {
       args[0].parent = object; object.children ||= []; object.children.push(args[0]); return result(newObject("Slot"));
     }
-    if (method === "RemoveFromParent") { if (object.parent?.children) object.parent.children = object.parent.children.filter(child => child !== object); object.parent = null; return { __success: true }; }
+    if (method === "RemoveFromParent") { if (object.parent?.children) object.parent.children = object.parent.children.filter(child => child !== object); object.parent = null; object.released = true; return { __success: true }; }
+    if (method === 'K2_DestroyActor') { object.destroyed = true; object.released = true; return true; }
     if (method === "ClearChildren") { for (const child of object.children || []) child.parent = null; object.children = []; return true; }
     if (method === "GetChildrenCount") return result((object.children || []).length);
     if (method === "GetChildAt") return result(object.children?.[args[0]] || null);
@@ -154,7 +169,24 @@ async function runtimeFixture(options = {}) {
     if (method === "SetVisibility") object.visibility = args[0];
     if (method === "AddToViewport") object.inViewport = true;
     if (method === "RemoveFromViewport") object.inViewport = false;
-    if (["SetAutoWrapText", "SetVisibility", "SetFont", "Update Chat Background", "SetSize", "SetPadding", "SetWidthOverride",
+    if (method === 'GetChatSenderType') return result(options.senderType || 0);
+    if (method === 'Server_NewMessage') {
+      assert.equal(args[0], 'Me', 'use only the authenticated local player name');
+      if (options.sendRejected) return false;
+      calls.at(-1).queuedOnGameThread = true;
+      if (!options.noEcho) setTimeout(() => events.get('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage')(chat, [{ MsgType: 0, Sender: args[0], Msg: args[1] }]), 0);
+      return true;
+    }
+    if (method === 'GetMousePosition') return { ReturnValue: true, LocationX: controller.mouseX || 400, LocationY: controller.mouseY || 300 };
+    if (method === 'GetViewportSize') return { SizeX: 1920, SizeY: 1080 };
+    if (method === 'GetViewportScale') return result(1);
+    if (method === 'IsInputKeyDown') return !!controller.mouseDown;
+    if (method === 'IsPressed') return !!controller.mouseDown;
+    if (method === 'SetIgnoreMoveInput' || method === 'SetIgnoreLookInput') {
+      const counter = method === 'SetIgnoreMoveInput' ? 'moveBlocks' : 'lookBlocks';
+      object[counter] = Math.max(0, object[counter] + (args[0] ? 1 : -1)); return true;
+    }
+    if (["SetRenderTranslation", "SetHintText", "SetKeyboardFocus", "SetAutoWrapText", "SetVisibility", "SetFont", "Update Chat Background", "SetSize", "SetPadding", "SetWidthOverride",
       "SetAnchors", "SetOffsets", "SetAutoSize", "SetZOrder", "SetBrushColor", "SetIsEnabled", "ScrollToEnd", "SetScrollOffset",
       "SetColorAndOpacity", "SetBackgroundColor", "UnselectMenuItem", "ClearPageTabs",
       "AddToViewport", "RemoveFromViewport", "SetInputMode_GameAndUIEx", "SetInputMode_GameOnly", "SetIgnoreLookInput", "SetIgnoreMoveInput"].includes(method)) return { __success: true };
@@ -167,21 +199,34 @@ async function runtimeFixture(options = {}) {
     hub.ModBP = { IsValid: () => true, GetName: () => 'Mod_ModHub_C_0', Widget_ModHub: hub, RegisteredMods: [] };
   }
   const context = vm.createContext({
-    console, Date: Clock, setTimeout: (fn, ms) => ms === 500 ? (uiCallbacks.push(fn), 0) : [100, 2500].includes(ms) ? (hubCallbacks.push(fn), hubCallbacks.length) : [1000, 2000].includes(ms) ? 0 : setTimeout(fn, ms), clearTimeout: id => { if (typeof id === 'number') hubCallbacks[id - 1] = null; else clearTimeout(id); }, AbortController,
+    console, Date: Clock, setTimeout: (fn, ms) => ms === 0 ? (deferred.push(fn), { deferred: true }) : ms === 16 ? setTimeout(fn, 0) : ms === 500 ? (uiCallbacks.push(fn), 0) : [100, 2500].includes(ms) ? (hubCallbacks.push(fn), hubCallbacks.length) : [1000, 2000].includes(ms) ? 0 : setTimeout(fn, ms), clearTimeout: id => { if (typeof id === 'number') hubCallbacks[id - 1] = null; else if (!id?.deferred) clearTimeout(id); }, AbortController,
     getGameDirectory: () => "fake/FSD",
-    readFile: path => path.endsWith('chat-history.json') ? (options.historyRaw || "") : JSON.stringify(fixtureConfig),
+    readFile: path => path.endsWith('chat-history.json') ? (options.historyRaw || "") : path.endsWith('ui-layout.json') ? (files.get(path) || options.layoutRaw || '{}') : JSON.stringify(fixtureConfig),
     writeFile: (path, value) => { files.set(path, value); if (path.endsWith('/config.json')) fixtureConfig = JSON.parse(value); return true; },
     print: message => logs.push(message),
     GetProperty: (object, key) => options.nullFields ? null : key === "Text" ? object?.value : object?.[key],
     SetProperty: (object, key, value) => { object[key] = value; return true; },
-    StaticFindObject: path => { lookups.push(path); return path.includes('/Game/DRGChatTranslatorHub/') ? null : { type: path.split('.').at(-1) }; },
-    NewUObject: cls => newObject(cls.type),
-    BindDelegateCallback: (object, _name, callback) => { const id = ++bindingSequence; bindings.set(id, { object, callback }); return id; },
-    UnbindDelegateCallback: id => bindings.delete(id),
+    StaticFindObject: path => { lookups.push(path); return path.includes('/Game/DRGChatTranslatorHub/') ? null : { type: path.split('.').at(-1), revision: interfaceRevision }; },
+    NewUObject: (cls, outer) => newObject(cls.type, outer),
+    BindDelegateCallback: (object, event, callback) => {
+      if (options.delegateUnavailable) return -1;
+      const id = ++bindingSequence; bindings.set(id, { object, event, callback }); return id;
+    },
+    UnbindDelegateCallback: id => {
+      unbindAttempts.push(id);
+      if (!bindings.delete(id)) throw new Error('Callback id not found');
+      if (options.firstUnbindThrows && unbindAttempts.length === 1) throw new Error('cleanup interrupted after removing callback');
+      return true;
+    },
     __umgSetUserWidgetRoot: (object, root) => { object.root = root; },
     __umgDispatchSync: options.noGameDispatcher ? undefined : (object, method, ...args) => {
+      if (!gameThreadAvailable) { blockingWaits++; throw new Error('game-thread tick suspended during LoadMap'); }
       onGameThread = true;
       try { return commonCall(object, method, ...args); } finally { onGameThread = false; }
+    },
+    __umgDispatchAsync: options.noGameDispatcher ? undefined : (object, method, ...args) => {
+      onGameThread = true;
+      try { const result = commonCall(object, method, ...args); calls.at(-1).asyncMutation = true; return result; } finally { onGameThread = false; }
     },
     FindFirstOf: () => owner,
     FindAllInstancesOfClass: name => name === "HUD_Chat_C" ? (chatScans++, [chat]) : name === 'ModHub_C' ? (hub ? [hub] : []) : name === 'Mod_ModHub_C' ? (hubScans++, hub ? [hub.ModBP] : []) : name === "FSDPlayerState" ? (options.players || []).map(name => ({ name, IsValid: () => true, GetName: () => "PlayerState_" + name })) : [],
@@ -190,23 +235,35 @@ async function runtimeFixture(options = {}) {
     RegisterBindHook: (path, _pre, post) => { events.set(path, post); return [3, 4]; },
     RegisterKeyBind: (key, callback) => { keys.set(key, callback); return true; },
     RegisterLoadMapPreHook: callback => events.set("travel", callback),
+    RegisterLoadMapPostHook: callback => events.set("travelComplete", callback),
     NotifyOnNewObject: (name, callback) => notifications.set(name, callback),
     fetch: (_url, options) => new Promise(resolve => requests.push({ options, resolve })),
   });
   const modules = new Map();
-  for (const name of ['core.js', 'history.js', 'chat-ui.js']) modules.set('./' + name, new vm.SourceTextModule(fs.readFileSync(new URL('../js/' + name, import.meta.url), 'utf8'), { context }));
+  for (const name of ['core.js', 'history.js', 'chat-ui.js', 'layout.js']) modules.set('./' + name, new vm.SourceTextModule(fs.readFileSync(new URL('../js/' + name, import.meta.url), 'utf8'), { context }));
   const main = new vm.SourceTextModule(fs.readFileSync(new URL("../js/main.js", import.meta.url), "utf8"), { context });
   await main.link(name => modules.get(name));
   await main.evaluate();
   // The dispatcher is installed after module evaluation in the actual runtime.
   const initialHubCheck = hubCallbacks.findIndex(fn => typeof fn === 'function');
   if (initialHubCheck >= 0) { const callback = hubCallbacks[initialHubCheck]; hubCallbacks[initialHubCheck] = null; callback(); }
-  return { events, keys, calls, requests, logs, input, chat, widgets, files, controller, hub, lookups, notifications, chatScans: () => chatScans, hubScans: () => hubScans,
+  return { events, keys, calls, requests, logs, input, chat, widgets, files, controller, hub, lookups, notifications, unbindAttempts, staleReads,
+    suspendGameThread: () => { gameThreadAvailable = false; },
+    resumeGameThread: () => { gameThreadAvailable = true; }, blockingWaits: () => blockingWaits,
+    collectHubPage: () => {
+      const mod = hub.ModBP.RegisteredMods[0], page = mod.TranslatorPages[0];
+      for (const widget of widgets) if (widget === mod || widget === page || widget.outer === page) {
+        assert.equal(widget.rooted, false); widget.expired = true; widget.destroyed = true;
+      }
+    },
+    replaceWorld: () => { interfaceRevision++; if (hub) { for (const mod of hub.ModBP.RegisteredMods) mod.destroyed = true; hub.ModBP.RegisteredMods = []; hub.MenuItemList.MenuItems = []; hub.MenuItemList.ItemsScrollBox.children = []; } },
+    delegate: (object, event, params = []) => { for (const item of bindings.values()) if (item.object === object && item.event === event) invokeNativeEvent(item.callback, [object, params]); },
+    chatScans: () => chatScans, hubScans: () => hubScans,
     refreshHub: () => commonCall(hub.MenuItemList, 'SortItems'),
     pulseHub: () => { const callback = hubCallbacks.find(fn => typeof fn === 'function'); if (callback) { hubCallbacks[hubCallbacks.indexOf(callback)] = null; callback(); } },
     click: caption => {
-      for (const { object, callback } of bindings.values()) {
-        if (!object.released && object.enabled !== false && object.children?.some(child => child.value === caption)) { callback(); return; }
+      for (const { object, callback, event } of bindings.values()) {
+        if (!object.released && object.enabled !== false && (!event || event === 'OnClicked') && object.children?.some(child => child.value === caption)) { invokeNativeEvent(callback, [object, []]); return; }
       }
       throw new Error('No active button: ' + caption);
     },
@@ -257,7 +314,7 @@ test("a map change discards a pending outgoing result", async () => {
   await turn();
   assert.equal(runtime.input.value, "先别叫空降舱");
   assert.ok(!runtime.calls.some(call => call.method === "SetText" && call.object === runtime.input));
-  assert.ok(runtime.widgets.filter(widget => widget.type === 'TextBlock').every(widget => widget.released));
+  assert.ok(runtime.widgets.filter(widget => widget.type === 'TextBlock').every(widget => !widget.rooted));
 });
 
 test("failed outgoing API request leaves the original input unchanged", async () => {
@@ -426,6 +483,7 @@ test('clearing chat persists the empty list, retains cached translations and nev
   runtime.advanceUI(2000);
   chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Miner', Msg: 'hello' }]);
   assert.ok(historyFile(runtime).messages[0].id > previousId);
+  await turn();
   assert.ok(uiText(runtime).includes('你好'));
   assert.equal(runtime.requests.length, 1);
   runtime.keys.get('F9')();
@@ -450,7 +508,9 @@ test('large histories use a bounded lazy row pool, cache native lookups, and reo
   runtime.click('较早聊天'); assert.equal(runtime.widgets.length, count);
   assert.equal(runtime.requests.length, 0);
   runtime.keys.get('F9')(); runtime.events.get('travel')();
-  assert.ok(runtime.widgets.filter(widget => widget.type !== 'Slot').every(widget => widget.released));
+  runtime.events.get('travelComplete')();
+  assert.ok(runtime.widgets.every(widget => !widget.rooted));
+  assert.ok(!runtime.widgets.some(widget => widget.inViewport));
 });
 
 test('automatic and manual translation of the same message share one request; failed retranslation retains the previous text', async () => {
@@ -486,6 +546,34 @@ test('F9 closing restores game controls and balances only its own input blocks',
   assert.equal(runtime.requests.length, 0);
 });
 
+test('native close-button payload closes the viewport and balances controls across button/key reopen cycles', async () => {
+  const runtime = await runtimeFixture({ open: false, focused: false });
+  for (let cycle = 0; cycle < 5; cycle++) {
+    runtime.keys.get('F9')();
+    assert.equal(runtime.controller.moveBlocks, 1); assert.equal(runtime.controller.lookBlocks, 1);
+    runtime.click('关闭（F9）');
+    assert.ok(!runtime.widgets.some(widget => widget.type === 'UserWidget' && widget.inViewport));
+    assert.equal(runtime.controller.bShowMouseCursor, false);
+    assert.equal(runtime.controller.moveBlocks, 0); assert.equal(runtime.controller.lookBlocks, 0);
+    runtime.keys.get('F9')();
+    assert.ok(runtime.widgets.some(widget => widget.type === 'UserWidget' && widget.inViewport));
+    runtime.keys.get('F9')();
+    assert.equal(runtime.controller.bShowMouseCursor, false);
+    assert.equal(runtime.controller.moveBlocks, 0); assert.equal(runtime.controller.lookBlocks, 0);
+  }
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('close button preserves other input blockers and restores an underlying Mod Hub menu', async () => {
+  const runtime = await runtimeFixture({ hub: true, open: false, focused: false, moveBlocks: 2, lookBlocks: 1 });
+  runtime.controller.bShowMouseCursor = true;
+  runtime.click('聊天记录（F9）'); runtime.click('关闭（F9）');
+  assert.equal(runtime.controller.moveBlocks, 2); assert.equal(runtime.controller.lookBlocks, 1);
+  assert.equal(runtime.controller.bShowMouseCursor, true);
+  assert.ok(runtime.calls.some(call => call.method === 'SetInputMode_GameAndUIEx' && call.args[1] === runtime.hub));
+  assert.ok(!runtime.widgets.some(widget => widget.type === 'UserWidget' && widget.inViewport));
+});
+
 test('Mod Hub registers an interface mod and native menu item; sorting and reopening retain it without scans', async () => {
   const runtime = await runtimeFixture({ hub: true, embeddedHub: true, open: false, focused: false });
   assert.ok(uiText(runtime).includes('聊天翻译'));
@@ -498,14 +586,14 @@ test('Mod Hub registers an interface mod and native menu item; sorting and reope
   runtime.click('自动英→中：开启');
   assert.equal(JSON.parse([...runtime.files].find(([path]) => path.endsWith('/config.json'))[1]).IncomingEnabled, false);
   runtime.click('聊天记录（F9）');
-  assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文'));
+  assert.ok(uiText(runtime).includes('聊天翻译  ·  按住这里拖动'));
   assert.equal(runtime.requests.length, 0);
   runtime.keys.get('F9')();
   const inputMode = runtime.calls.filter(call => call.method === 'SetInputMode_GameAndUIEx').at(-1);
   assert.equal(inputMode.args[1], runtime.hub);
   assert.equal(runtime.controller.bShowMouseCursor, true);
   const scans = runtime.hubScans();
-  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.notifications.get('ModHub_C')(runtime.hub);
   runtime.pulseHub(); runtime.refreshHub();
   assert.equal(runtime.hubScans(), scans);
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
@@ -518,7 +606,7 @@ test('missing cooked adapter reports failure, preserves F9 and never claims succ
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
   assert.ok(runtime.logs.some(line => line.includes('适配组件未能加载')));
   assert.ok(!runtime.logs.some(line => line.includes('原生注册已确认')));
-  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天翻译  ·  按住这里拖动')); runtime.keys.get('F9')();
   for (let i = 0; i < 16; i++) runtime.pulseHub();
   const scans = runtime.hubScans(); runtime.pulseHub();
   assert.equal(runtime.hubScans(), scans, 'discovery stops after bounded retries');
@@ -529,7 +617,7 @@ test('native registration recovers a missing native menu item without adding a s
   const runtime = await runtimeFixture({ hub: true });
   runtime.hub.MenuItemList.MenuItems = [];
   runtime.refreshHub();
-  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.notifications.get('ModHub_C')(runtime.hub);
   runtime.pulseHub();
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
   assert.equal(runtime.hub.MenuItemList.MenuItems.length, 1);
@@ -541,11 +629,12 @@ test('partial page failure cleans up the unfinished adapter and stops native att
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
   assert.ok(runtime.widgets.filter(widget => widget.type === 'ChatTranslatorHub_C').every(widget => widget.released));
   runtime.pulseHub();
-  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.notifications.get('ModHub_C')(runtime.hub);
   runtime.pulseHub(); runtime.events.get('travel')(); runtime.pulseHub();
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
   assert.equal(runtime.calls.filter(call => call.method === 'Create').length, 1);
-  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+  runtime.events.get('travelComplete')();
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天翻译  ·  按住这里拖动')); runtime.keys.get('F9')();
 });
 
 test('Blueprint loading, object creation and native Mod Hub registration run only on the game thread', async () => {
@@ -562,13 +651,13 @@ test('missing game-thread dispatcher skips unsafe loading while F9 remains usabl
   const runtime = await runtimeFixture({ hub: true, noGameDispatcher: true });
   assert.ok(!runtime.calls.some(call => ['GetAsset', 'BeginDeferredActorSpawnFromClass', 'FinishSpawningActor', 'Create', 'RegisterMod'].includes(call.method)));
   assert.ok(runtime.logs.some(line => line.includes('本次运行已停止接入')));
-  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天记录  ·  原文与中文译文')); runtime.keys.get('F9')();
+  runtime.keys.get('F9')(); assert.ok(uiText(runtime).includes('聊天翻译  ·  按住这里拖动')); runtime.keys.get('F9')();
 });
 
 test('native loading exception disables retries even after hub reopen and scene changes', async () => {
   const runtime = await runtimeFixture({ hub: true, dispatchFailure: true });
   for (let i = 0; i < 15; i++) runtime.pulseHub();
-  runtime.events.get('/Game/ModHub/UI/Widgets/ModHub.ModHub_C:Open Hub')(runtime.hub);
+  runtime.notifications.get('ModHub_C')(runtime.hub);
   runtime.pulseHub(); runtime.events.get('travel')(); runtime.pulseHub();
   assert.equal(runtime.calls.filter(call => call.method === 'GetAsset').length, 1);
   assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0);
@@ -587,12 +676,16 @@ test('repeated messages from different players share one translation request and
   assert.equal(historyFile(runtime).translations.length, 1);
 });
 
-test('map travel closes F9 and releases the Mod Hub toolbar without removing persisted chat', async () => {
+test('map travel releases callbacks and detaches F9 after loading without removing persisted chat', async () => {
   const runtime = await runtimeFixture({ hub: true, open: false, focused: false, config: { IncomingEnabled: false } });
   chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Miner', Msg: 'hello' }]);
   runtime.keys.get('F9')();
+  const before = runtime.calls.length;
   runtime.events.get('travel')();
-  assert.ok(runtime.widgets.filter(widget => !['Slot', 'CanvasPanel', 'MenuItemList_C', 'MenuItem_C', 'ScrollBox', 'Border'].includes(widget.type) && widget.value !== 'Chat Translator · 聊天翻译').every(widget => widget.released));
+  assert.ok(!runtime.calls.slice(before).some(call => /^(RemoveFrom|K2_DestroyActor)/.test(call.method)));
+  runtime.events.get('travelComplete')();
+  assert.ok(runtime.widgets.every(widget => !widget.rooted));
+  assert.ok(!runtime.widgets.some(widget => widget.inViewport));
   assert.equal(historyFile(runtime).messages.length, 1);
   assert.equal(runtime.requests.length, 0);
 });
@@ -607,4 +700,292 @@ test('mixed Chinese and English can be translated manually without triggering an
   runtime.requests[0].resolve(ok('请稍等')); await turn();
   assert.ok(uiText(runtime).includes('请稍等'));
   runtime.keys.get('F9')();
+});
+
+test('local messaging event records own English with teammate-only roster and deduplicates network echo', async () => {
+  const runtime = await runtimeFixture({ players: ['Teammate'], config: { IncomingEnabled: false } });
+  const own = { MsgType: 0, Sender: 'Me', Msg: 'ready now' };
+  runtime.events.get('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage')(runtime.chat, [own]);
+  runtime.events.get('/Script/FSD.FSDGameState:ClientNewMessage')(null, [own]);
+  assert.equal(historyFile(runtime).messages.length, 1);
+  assert.equal(historyFile(runtime).messages[0].sender, 'Me');
+  assert.equal(runtime.requests.length, 0);
+  assert.ok(!runtime.events.has('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:Add Chat Message'), 'do not listen to history replay');
+});
+
+test('F9 draft translation fills English and caches original Chinese; sending is an explicit separate action', async () => {
+  const runtime = await runtimeFixture(); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '准备出发';
+  runtime.keys.get('F8')(); await turn();
+  assert.equal(runtime.requests.length, 1);
+  runtime.requests[0].resolve(ok('Ready to go.')); await turn();
+  assert.equal(draft.value, 'Ready to go.');
+  assert.ok(runtime.calls.every(call => call.method !== 'Server_NewMessage'));
+  assert.ok(!historyFile(runtime).messages.length, 'unsent drafts are not chat');
+  runtime.click('发送'); await turn();
+  const sent = runtime.calls.filter(call => call.method === 'Server_NewMessage');
+  assert.equal(sent.length, 1); assert.deepEqual(Array.from(sent[0].args), ['Me', 'Ready to go.', 0]);
+  assert.equal(sent[0].queuedOnGameThread, true); assert.equal(draft.value, '');
+  runtime.events.get('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage')(runtime.chat, [{ MsgType: 0, Sender: 'Me', Msg: 'Ready to go.' }]);
+  await turn(); assert.equal(runtime.requests.length, 1);
+  assert.ok(uiText(runtime).includes('准备出发'));
+});
+
+test('editing F9 draft while translation is pending retains the newer input and never sends it', async () => {
+  const runtime = await runtimeFixture(); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '等一下';
+  runtime.click('翻译成英文'); await turn(); draft.value = '新版草稿';
+  runtime.requests[0].resolve(ok('Wait a moment.')); await turn();
+  assert.equal(draft.value, '新版草稿');
+  assert.ok(runtime.calls.every(call => call.method !== 'Server_NewMessage'));
+});
+
+test('F9 sends ordinary chat with translation disabled, Enter sends once, and focus loss or empty input never sends', async () => {
+  const runtime = await runtimeFixture({ config: { Enabled: false } }); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '普通中文';
+  runtime.delegate(draft, 'OnTextCommitted', ['普通中文', 2]);
+  assert.equal(runtime.calls.filter(call => call.method === 'Server_NewMessage').length, 0);
+  runtime.delegate(draft, 'OnTextCommitted', ['普通中文', 1]);
+  runtime.delegate(draft, 'OnTextCommitted', ['', 1]);
+  assert.equal(runtime.calls.filter(call => call.method === 'Server_NewMessage').length, 1);
+  await turn();
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('F9 export includes all stored messages and cached Chinese, excludes settings and makes no API request', async () => {
+  const saved = JSON.stringify({ version: 1, sequence: 1, messages: [{ id: 1, sender: 'Me', source: 'Hello', time: '2026-10-02T01:00:00Z' }], translations: [] });
+  const runtime = await runtimeFixture({ historyRaw: saved, config: { IncomingEnabled: false } });
+  runtime.keys.get('F9')(); runtime.click('导出聊天');
+  const exports = [...runtime.files].filter(([path]) => path.endsWith('.txt'));
+  assert.equal(exports.length, 1); assert.match(exports[0][1], /Me\r\n原文：Hello/);
+  assert.equal(exports[0][1].charCodeAt(0), 0xFEFF);
+  assert.doesNotMatch(exports[0][1], /test-key|ApiKey|Endpoint|glm-/);
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('F9 mouse dragging updates anchored position, clamps to viewport, and persists only UI layout', async () => {
+  const runtime = await runtimeFixture(); runtime.keys.get('F9')();
+  const title = runtime.widgets.find(widget => widget.children?.some(child => child.value === '聊天翻译  ·  按住这里拖动'));
+  runtime.controller.mouseDown = true; runtime.delegate(title, 'OnPressed');
+  runtime.controller.mouseX = 1900; runtime.controller.mouseY = 1000;
+  await new Promise(resolve => setTimeout(resolve, 45));
+  runtime.controller.mouseDown = false; runtime.delegate(title, 'OnReleased');
+  const saved = JSON.parse([...runtime.files].find(([path]) => path.endsWith('ui-layout.json'))[1]);
+  assert.equal(saved.X, 100 - saved.Width); assert.equal(saved.Y, 100 - saved.Height);
+  assert.ok(![...runtime.files.keys()].some(path => path.endsWith('/config.json')));
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('layout editor values affect row count and sizes, reload rebuilds safely without requesting translations', async () => {
+  const messages = Array.from({ length: 20 }, (_, index) => ({ id: index + 1, sender: 'Me', source: '文字 ' + index, time: '2026-10-02T01:00:00Z' }));
+  const runtime = await runtimeFixture({ layoutRaw: JSON.stringify({ PageSize: 8, Width: 80, MetaWidth: 150 }), historyRaw: JSON.stringify({ version: 1, sequence: 20, messages, translations: [] }) });
+  runtime.keys.get('F9')(); await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok(uiText(runtime).includes('13–20 / 20 条'));
+  assert.ok(runtime.calls.some(call => call.method === 'SetWidthOverride' && call.args[0] === 150));
+  assert.equal(runtime.requests.length, 0);
+  runtime.keys.get('F6')(); runtime.keys.get('F9')();
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('invalid layout numbers are bounded and panel stays within viewport', () => {
+  const layout = normalizeLayout({ Width: 200, Height: -10, X: 80, Y: 80, FontSize: 'bad', Gap: -1, PageSize: 999 });
+  assert.equal(layout.Width, 95); assert.equal(layout.Height, 40); assert.equal(layout.X, 5); assert.equal(layout.Y, 60);
+  assert.equal(layout.FontSize, 13); assert.equal(layout.Gap, 0); assert.equal(layout.PageSize, 32);
+  assert.deepEqual(normalizeLayout(null), normalizeLayout());
+});
+
+test('RPC rejection retains draft and no unconfirmed message is recorded', async () => {
+  const runtime = await runtimeFixture({ sendRejected: true }); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '保留我的草稿';
+  runtime.click('发送'); await turn();
+  assert.equal(draft.value, '保留我的草稿'); assert.ok(uiText(runtime).includes('游戏聊天入口调用失败，草稿保留。'));
+  assert.ok(![...runtime.files.keys()].some(path => path.endsWith('chat-history.json')));
+});
+
+test('pending send clears only on local echo and preserves edits made while awaiting confirmation', async () => {
+  const runtime = await runtimeFixture({ noEcho: true }); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '等待回显';
+  runtime.click('发送'); await turn(); assert.equal(draft.value, '等待回显');
+  draft.value = '新的草稿';
+  runtime.events.get('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage')(runtime.chat, [{ MsgType: 0, Sender: 'Me', Msg: '等待回显' }]);
+  await turn(); assert.equal(draft.value, '新的草稿'); assert.equal(historyFile(runtime).messages.length, 1);
+});
+
+test('drag and export avoid unsupported native key structs and non-ASCII export filenames', async () => {
+  const runtime = await runtimeFixture(); runtime.keys.get('F9')();
+  const title = runtime.widgets.find(widget => widget.children?.some(child => child.value === '聊天翻译  ·  按住这里拖动'));
+  runtime.controller.mouseDown = true; runtime.delegate(title, 'OnPressed');
+  await new Promise(resolve => setTimeout(resolve, 40)); runtime.controller.mouseDown = false; runtime.delegate(title, 'OnReleased');
+  assert.ok(runtime.calls.some(call => call.method === 'IsPressed'));
+  assert.ok(runtime.calls.every(call => call.method !== 'IsInputKeyDown'));
+  runtime.click('导出聊天');
+  const exported = [...runtime.files.keys()].find(path => path.endsWith('.txt'));
+  assert.match(exported.split('/').at(-1), /^chat-export-[\x00-\x7f]+\.txt$/);
+});
+
+test('UMG mutations and viewport mounting execute on the game thread after the native delegate returns', async () => {
+  const runtime = await runtimeFixture({ config: { IncomingEnabled: false } }); runtime.keys.get('F9')();
+  const draft = runtime.widgets.find(widget => widget.type === 'EditableTextBox'); draft.value = '稳定性测试';
+  runtime.click('发送'); await turn();
+  const mutations = runtime.calls.filter(call => /^(Set|AddChild|RemoveFrom|AddToViewport|ScrollTo|ClearChildren)/.test(call.method));
+  assert.ok(mutations.length > 30);
+  assert.ok(mutations.every(call => call.onGameThread), 'Slate mutations must not execute on JS worker');
+  assert.ok(mutations.every(call => !call.inNativeEvent), 'do not mutate widget tree inside native click/commit delegate');
+  assert.ok(mutations.some(call => call.asyncMutation && call.method === 'SetText'));
+  runtime.keys.get('F9')(); runtime.keys.get('F9')();
+  const mounts = runtime.calls.filter(call => /^(AddToViewport|RemoveFromViewport)$/.test(call.method));
+  assert.ok(mounts.every(call => call.onGameThread));
+});
+
+test('messages coalesce F9 refreshes instead of constructing native rows inside a chat callback', async () => {
+  const runtime = await runtimeFixture({ config: { IncomingEnabled: false } }); runtime.keys.get('F9')();
+  const before = runtime.widgets.length;
+  for (let index = 0; index < 6; index++) chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Me', Msg: '测试 '+index }]);
+  assert.equal(runtime.widgets.length, before, 'chat receipt only saves data and schedules a frame');
+  await turn();
+  assert.ok(runtime.widgets.length > before); assert.equal(historyFile(runtime).messages.length, 6);
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('drag moves only render translation while held and commits anchors once on release', async () => {
+  const runtime = await runtimeFixture(); runtime.keys.get('F9')();
+  const title = runtime.widgets.find(widget => widget.children?.some(child => child.value === '聊天翻译  ·  按住这里拖动'));
+  const anchorCount = () => runtime.calls.filter(call => call.method === 'SetAnchors').length;
+  const before = anchorCount(); runtime.controller.mouseDown = true; runtime.delegate(title, 'OnPressed');
+  runtime.controller.mouseX = 500; await new Promise(resolve => setTimeout(resolve, 25));
+  runtime.controller.mouseX = 600; await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(anchorCount(), before, 'moving must not reflow the whole panel');
+  assert.ok(runtime.calls.filter(call => call.method === 'SetRenderTranslation').length >= 2);
+  runtime.controller.mouseDown = false; runtime.delegate(title, 'OnReleased');
+  assert.equal(anchorCount(), before + 1);
+  const setters = runtime.calls.filter(call => call.method === 'SetRenderTranslation');
+  assert.ok(setters.every(call => call.asyncMutation));
+  assert.deepEqual(JSON.parse(JSON.stringify(setters.at(-1).args[0])), { X: 0, Y: 0 });
+});
+
+test('Mod Hub discovery avoids unsafe Blueprint parameter reflection and premature object inspection', async () => {
+  const runtime = await runtimeFixture({ hub: true });
+  assert.ok(![...runtime.events.keys()].some(path => path.includes('/ModHub/') || path.includes('/DRGChatTranslatorHub/')));
+  const unfinished = new Proxy({}, { get() { throw new Error('new object is not initialized'); } });
+  assert.doesNotThrow(() => runtime.notifications.get('ModHub_C')(unfinished));
+  runtime.pulseHub();
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+  assert.equal(runtime.hub.MenuItemList.MenuItems.length, 1);
+  assert.ok(runtime.events.has('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage'), 'retain local chat recording');
+});
+
+test('repeated F6 reloads retain the existing Mod Hub Actor and settings page while rebuilding F9 layout', async () => {
+  const runtime = await runtimeFixture({ hub: true });
+  const mod = runtime.hub.ModBP.RegisteredMods[0], page = mod.TranslatorPages[0];
+  for (let index = 0; index < 6; index++) {
+    runtime.keys.get('F9')();
+    runtime.keys.get('F6')();
+    runtime.pulseHub();
+  }
+  assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+  assert.equal(runtime.hub.ModBP.RegisteredMods[0], mod);
+  assert.equal(mod.TranslatorPages[0], page);
+  assert.ok(!mod.released && !page.released);
+  assert.equal(runtime.calls.filter(call => call.method === 'FinishSpawningActor').length, 1);
+  runtime.click('Chat Translator · 聊天翻译');
+  assert.equal(runtime.hub.PageContainer.children[0], page);
+  runtime.click('自动英→中：开启');
+  assert.equal(JSON.parse([...runtime.files].find(([path]) => path.endsWith('/config.json'))[1]).IncomingEnabled, false);
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('map teardown never touches old world UI or waits on a suspended game thread; post-load restores controls', async () => {
+  const runtime = await runtimeFixture({ hub: true });
+  runtime.keys.get('F6')(); runtime.keys.get('F9')();
+  const owned = runtime.widgets.filter(widget => widget.rooted);
+  assert.ok(owned.length > 30);
+  const title = runtime.widgets.find(widget => widget.children?.some(child => child.value === '聊天翻译  ·  按住这里拖动'));
+  runtime.controller.mouseDown = true; runtime.delegate(title, 'OnPressed');
+  const before = runtime.calls.length;
+  runtime.suspendGameThread();
+  runtime.events.get('travel')();
+  assert.equal(runtime.blockingWaits(), 0, 'travel cleanup must never enqueue a synchronous wait');
+  assert.equal(runtime.calls.length, before, 'do not enqueue raw old-world pointers during GC');
+  const removals = runtime.calls.slice(before).filter(call => /^(RemoveFrom|K2_DestroyActor)/.test(call.method));
+  assert.equal(removals.length, 0);
+  runtime.keys.get('F9')(); runtime.pulseHub();
+  assert.equal(runtime.blockingWaits(), 0, 'F9 and registry scans remain paused while loading');
+  assert.ok(runtime.logs.some(line => line.includes('地图切换开始')));
+  runtime.resumeGameThread(); runtime.events.get('travelComplete')();
+  assert.equal(runtime.controller.bShowMouseCursor, false);
+  const unblocks = runtime.calls.slice(before).filter(call => ['SetIgnoreLookInput', 'SetIgnoreMoveInput'].includes(call.method));
+  assert.equal(unblocks.length, 2); assert.ok(unblocks.every(call => call.args[0] === false && call.asyncMutation));
+  assert.ok(owned.every(widget => !widget.rooted), 'GameInstance F9 widgets unroot only after removal is confirmed');
+});
+
+test('Mod Hub page and children are retained by their native owners rather than explicit roots', async () => {
+  const runtime = await runtimeFixture({ hub: true });
+  const mod = runtime.hub.ModBP.RegisteredMods[0], page = mod.TranslatorPages[0];
+  assert.equal(mod.rooted, false);
+  assert.equal(page.rooted, false);
+  assert.ok(runtime.widgets.every(widget => !widget.rooted));
+  runtime.click('Chat Translator · 聊天翻译'); runtime.click('自动英→中：开启');
+  assert.equal(JSON.parse([...runtime.files].find(([path]) => path.endsWith('/config.json'))[1]).IncomingEnabled, false);
+});
+
+test('completed map loading reacquires interface classes and registers only one mod in each new world', async () => {
+  const runtime = await runtimeFixture({ hub: true, config: { IncomingEnabled: false } });
+  chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Me', Msg: '保留这条聊天' }]);
+  const firstMod = runtime.hub.ModBP.RegisteredMods[0];
+  for (let index = 0; index < 3; index++) {
+    runtime.keys.get('F9')(); runtime.events.get('travel')();
+    runtime.replaceWorld(); runtime.pulseHub();
+    assert.equal(runtime.hub.ModBP.RegisteredMods.length, 0, 'do not register while the new world is still loading');
+    runtime.events.get('travelComplete')(); runtime.pulseHub();
+    assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+    assert.equal(runtime.hub.MenuItemList.MenuItems.length, 1);
+    assert.ok(!runtime.hub.ModBP.RegisteredMods[0].rooted);
+    assert.equal(runtime.requests.length, 0);
+  }
+  assert.ok(firstMod.destroyed);
+  assert.equal(runtime.lookups.filter(path => path === '/Game/_ModHub/IHubMod.IHubMod_C').length, 4);
+  assert.equal(historyFile(runtime).messages.length, 1);
+  assert.ok(runtime.logs.some(line => line.includes('地图加载完成')));
+  assert.ok(!runtime.logs.some(line => line.includes('native IHubMod cast rejected')));
+});
+
+test('a delayed travel notification after native GC never reads expired Mod Hub UObject wrappers', async () => {
+  const runtime = await runtimeFixture({ hub: true, config: { IncomingEnabled: false } });
+  chatEvent(runtime)(null, [{ MsgType: 0, Sender: 'Me', Msg: 'keep this record' }]);
+  for (let cycle = 0; cycle < 6; cycle++) {
+    runtime.collectHubPage(); // Native GC can precede the worker's queued pre-hook.
+    const before = runtime.calls.length;
+    runtime.events.get('travel')(); runtime.events.get('travel')();
+    assert.equal(runtime.staleReads.length, 0, 'even IsValid/GetName method lookup is unsafe after GC');
+    assert.equal(runtime.calls.length, before, 'do not queue old Actor/page removal');
+    runtime.replaceWorld(); runtime.events.get('travelComplete')(); runtime.pulseHub();
+    assert.equal(runtime.hub.ModBP.RegisteredMods.length, 1);
+    runtime.keys.get('F9')();
+    assert.ok(runtime.widgets.some(widget => widget.type === 'UserWidget' && widget.inViewport));
+    runtime.keys.get('F9')();
+  }
+  assert.equal(runtime.staleReads.length, 0);
+  assert.equal(new Set(runtime.unbindAttempts).size, runtime.unbindAttempts.length);
+  assert.equal(historyFile(runtime).messages.length, 1);
+  assert.equal(runtime.requests.length, 0);
+});
+
+test('cleanup interrupted after native unbind never retries the already removed callback id', async () => {
+  const runtime = await runtimeFixture({ hub: true, firstUnbindThrows: true });
+  runtime.keys.get('F9')();
+  runtime.events.get('travel')(); runtime.events.get('travelComplete')();
+  runtime.replaceWorld(); runtime.pulseHub(); runtime.keys.get('F9')();
+  runtime.keys.get('F6')(); runtime.events.get('travel')(); runtime.events.get('travelComplete')();
+  assert.equal(new Set(runtime.unbindAttempts).size, runtime.unbindAttempts.length);
+  assert.ok(runtime.widgets.every(widget => !widget.rooted));
+});
+
+test('unavailable native delegates report the failed step and restart requirement without blaming missing UE4SS', async () => {
+  const runtime = await runtimeFixture({ delegateUnavailable: true });
+  runtime.keys.get('F9')(); runtime.keys.get('F9')(); runtime.keys.get('F6')(); runtime.keys.get('F9')();
+  assert.ok(runtime.logs.some(line => line.includes('绑定控件事件 OnClicked') && line.includes('DELEGATE_UNAVAILABLE')));
+  assert.ok(runtime.logs.some(line => line.includes('F6 无法恢复')));
+  assert.ok(!runtime.logs.some(line => line.includes('确认 UE4SS 框架已启用')));
+  assert.ok(runtime.widgets.filter(widget => widget.type !== 'TextBlock').every(widget => !widget.rooted), 'failed F9 leaves no retained window; diagnostic HUD labels remain visible');
+  assert.equal(runtime.requests.length, 0);
 });

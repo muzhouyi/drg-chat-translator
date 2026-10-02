@@ -1,10 +1,12 @@
 import { createTranslator, DEFAULTS, describeError, normalizeConfig } from "./core.js";
 import { createChatHistory, hasEnglishText, isPlayerChat } from "./history.js";
 import { createChatUI } from "./chat-ui.js";
+import { normalizeLayout, exportTranscript } from "./layout.js";
 
 const CONFIG_PATH = getGameDirectory() + "/Saved/SaveGames/Mods/DRGChatTranslator/config.json";
 const STATUS_PATH = getGameDirectory() + "/Saved/SaveGames/Mods/DRGChatTranslator/status.json";
 const HISTORY_PATH = getGameDirectory() + "/Saved/SaveGames/Mods/DRGChatTranslator/chat-history.json";
+const LAYOUT_PATH = getGameDirectory() + "/Saved/SaveGames/Mods/DRGChatTranslator/ui-layout.json";
 const INCOMING_PATH = "/Script/FSD.FSDGameState:ClientNewMessage";
 let epoch = 0;
 let disposed = false;
@@ -17,6 +19,7 @@ const statusHistory = [];
 let lastDiagnostics = null;
 let uiLines = [];
 let uiTimer = null;
+let sceneChanging = false;
 
 function log(message) { print("[DRGChatTranslator] " + message); }
 function valid(object) {
@@ -56,6 +59,10 @@ function allChats() {
   } catch (_) { return []; }
 }
 function localCall(object, method, ...args) {
+  if (typeof __umgDispatchAsync === 'function' && /^(?:SetText|SetFont|SetAutoWrapText|SetVisibility|Update Chat Background|RemoveFromParent)$/.test(method)) {
+    __umgDispatchAsync(object, method, ...args); return true;
+  }
+  if (typeof __umgDispatchSync === 'function' && /^AddChild$/.test(method)) return __umgDispatchSync(object, method, ...args);
   if (typeof CallFunctionEx === "function") {
     const result = CallFunctionEx(object, method, ...args);
     if (result && result.__success === false) throw new Error("Local call failed");
@@ -64,9 +71,17 @@ function localCall(object, method, ...args) {
   // Only invoke verified non-network HUD/input functions through this fallback.
   return CallFunction(object, method, ...args);
 }
-function releaseLine(line) {
+function releaseLine(line, travel = false) {
+  if (travel) {
+    // A rooted label is pinned; use its saved method without looking up
+    // properties on its old (possibly already collected) parent or HUD.
+    const release = line.releaseRoot; line.releaseRoot = null;
+    if (release) { try { release(); } catch (_) {} }
+    return;
+  }
   try { if (valid(line.widget)) localCall(line.widget, "RemoveFromParent"); } catch (_) {}
-  try { if (valid(line.widget)) line.widget.RemoveFromRoot(); } catch (_) {}
+  const release = line.releaseRoot; line.releaseRoot = null;
+  if (release) { try { release(); } catch (_) {} }
 }
 function maintainLines() {
   uiTimer = null;
@@ -88,10 +103,10 @@ function maintainLines() {
   if (uiLines.length) uiTimer = setTimeout(maintainLines, 500);
 }
 function display(message, sender = "翻译助手") {
-  if (disposed) return;
+  if (disposed || sceneChanging) return;
   let shown = false;
   for (const chat of allChats()) {
-    let widget = null;
+    let widget = null, releaseRoot = null;
     try {
       const panel = field(chat, "ChatMessages");
       if (!valid(panel)) continue;
@@ -99,6 +114,7 @@ function display(message, sender = "翻译助手") {
       widget = NewUObject(cls, field(chat, "WidgetTree") || panel);
       if (!valid(widget)) throw new Error("No text widget");
       widget.AddToRoot();
+      releaseRoot = widget.RemoveFromRoot.bind(widget);
       localCall(widget, "SetText", sender + "：" + message);
       localCall(widget, "SetAutoWrapText", true);
       localCall(widget, "SetVisibility", 3);
@@ -106,9 +122,9 @@ function display(message, sender = "翻译助手") {
       const font = field(field(chat, "NewChatEdit"), "Font") || field(field(chat, "InputChatBox"), "Font");
       if (font) { try { localCall(widget, "SetFont", font); } catch (_) {} }
       localCall(panel, "AddChild", widget);
-      uiLines.push({ chat, panel, widget, epoch, until: Date.now() + 45000 });
+      uiLines.push({ chat, panel, widget, releaseRoot, epoch, until: Date.now() + 45000 });
       shown = true;
-    } catch (_) { if (widget) releaseLine({ widget }); log("本机文字显示失败，请查看配置工具的运行状态。"); }
+    } catch (_) { if (widget) releaseLine({ widget, releaseRoot }); log("本机文字显示失败，请查看配置工具的运行状态。"); }
   }
   // Bound retained local widgets even when many messages arrive.
   while (uiLines.length > 8) releaseLine(uiLines.shift());
@@ -122,7 +138,7 @@ function recordStatus(message, diagnostics = null) {
   while (statusHistory.length > 20) statusHistory.shift();
   if (diagnostics) lastDiagnostics = diagnostics;
   try {
-    if (typeof writeFile === "function") writeFile(STATUS_PATH, JSON.stringify({ version: "0.2.2", history: statusHistory, diagnostics: lastDiagnostics }, null, 2));
+    if (typeof writeFile === "function") writeFile(STATUS_PATH, JSON.stringify({ version: "0.2.3", history: statusHistory, diagnostics: lastDiagnostics }, null, 2));
   } catch (_) {}
 }
 function notify(message, throttle = false) {
@@ -148,7 +164,7 @@ const history = createChatHistory({
   scope: () => JSON.stringify([translator.getConfig().Endpoint, translator.getConfig().Model]),
   onError: message => recordStatus(message),
 });
-const translationTasks = new Map(), rowStates = new Map();
+const translationTasks = new Map(), rowStates = new Map(), pendingSends = new Map();
 function localController() {
   for (const chat of allChats()) {
     try { const controller = unwrap(CallFunction(chat, "GetOwningPlayer")); if (valid(controller)) return controller; } catch (_) {}
@@ -196,6 +212,44 @@ const chatUI = createChatUI({
   history, rowState: id => rowStates.get(id) || {}, translateRow,
   getConfig: () => translator.getConfig(), setConfig, needsTranslation: hasEnglishText,
   controller: localController,
+  getLayout() { try { return normalizeLayout(JSON.parse((readFile(LAYOUT_PATH) || '{}').replace(/^\uFEFF/, ''))); } catch (_) { return normalizeLayout(); } },
+  saveLayout(value) { if (writeFile(LAYOUT_PATH, JSON.stringify(normalizeLayout(value), null, 2)) === false) throw new Error('save failed'); },
+  exportChat() {
+    const rows = history.rows();
+    // The framework's Windows file helper does not preserve Unicode path names.
+    const path = HISTORY_PATH.replace('chat-history.json', 'chat-export-' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt');
+    if (writeFile(path, exportTranscript(rows)) === false) throw new Error('export failed');
+    recordStatus('聊天已导出到：' + path); return '已导出 ' + rows.length + ' 条；文件在本机翻译配置目录。';
+  },
+  translateDraft: source => requestTranslation(source, 'en', false, true).then(result => { history.remember(result, 'zh', source); return result; }),
+  sendChat(source) {
+    source = String(source).trim();
+    if (!source || source.length > 500) throw new Error('请输入 1–500 字的聊天内容。');
+    const controller = localController(), state = field(controller, 'PlayerState');
+    if (!valid(controller) || !valid(state)) throw new Error('当前无法发送，请先进入空间站或任务。');
+    const sender = text(CallFunction(state, 'GetPlayerName'));
+    const senderType = Number(unwrap(CallFunction(state, 'GetChatSenderType')));
+    if (!sender || !Number.isFinite(senderType)) throw new Error('本机玩家信息未就绪，输入已保留。');
+    const key = JSON.stringify([sender, source]);
+    if (pendingSends.has(key)) throw new Error('这条消息正在等待游戏回显。');
+    return new Promise((resolve, reject) => {
+      const pending = { resolve, reject, sender, source, timer: null };
+      pendingSends.set(key, pending);
+      pending.timer = setTimeout(() => {
+        if (pendingSends.get(key) !== pending) return;
+        pendingSends.delete(key); recordStatus('F9 发送未收到游戏回显，草稿保留。');
+        reject(new Error('未收到游戏回显，草稿保留；确认是否发出后再重试。'));
+      }, 4000);
+      try {
+        // Same verified RPC and arguments used by HUD_Chat's normal send flow.
+        // CallFunction marshals FString and queues FUNC_Net calls on the game thread.
+        if (unwrap(CallFunction(controller, 'Server_NewMessage', sender, source, senderType)) !== true) throw new Error('queue failed');
+      } catch (_) {
+        clearTimeout(pending.timer); pendingSends.delete(key);
+        recordStatus('F9 游戏聊天入口调用失败，草稿保留。'); reject(new Error('游戏聊天入口调用失败，草稿保留。'));
+      }
+    });
+  },
   find: name => (typeof FindAllInstancesOfClass === "function" ? FindAllInstancesOfClass(name) : FindAllOf(name)),
   font() { const chat = allChats()[0]; return chat ? field(field(chat, "NewChatEdit") || field(chat, "InputChatBox"), "Font") : null; },
   restoreTarget() {
@@ -219,10 +273,14 @@ function knownPlayer(sender) {
   // System and host events use ES_Game; also reject fabricated senders if a roster is available.
   try {
     const find = typeof FindAllInstancesOfClass === "function" ? FindAllInstancesOfClass : FindAllOf;
-    const names = (find("FSDPlayerState") || []).filter(valid).map(state => {
+    const states = (find("FSDPlayerState") || []).filter(valid);
+    const hasRoster = states.length > 0;
+    const localState = field(localController(), 'PlayerState');
+    if (valid(localState)) states.push(localState);
+    const names = states.map(state => {
       try { return text(CallFunction(state, "GetPlayerName")); } catch (_) { return ""; }
     }).filter(Boolean);
-    return !names.length || names.includes(sender);
+    return !hasRoster || !names.length || names.includes(sender);
   } catch (_) { return true; }
 }
 
@@ -234,6 +292,8 @@ function incoming(_object, params) {
   const source = text(entry.Msg);
   const sender = text(entry.Sender);
   if (!source || !knownPlayer(sender)) return;
+  const sendKey = JSON.stringify([sender, source]), pending = pendingSends.get(sendKey);
+  if (pending) { clearTimeout(pending.timer); pendingSends.delete(sendKey); pending.resolve(true); }
   const id = sender + "|" + source;
   const now = Date.now();
   if (now - (seen.get(id) || 0) < 1500) return;
@@ -277,6 +337,7 @@ function findInput() {
 }
 function translateInput() {
   if (disposed) return;
+  if (chatUI.translateInput()) return;
   if (outgoingBusy) return notify("正在翻译，请稍等。", true);
   const captured = findInput();
   if (!captured) return notify("请先打开聊天框，输入中文后按 F8。");
@@ -293,26 +354,46 @@ function translateInput() {
     localCall(captured.input, "SetText", result);
     // Keep the original Chinese next to our own translated English without another API call.
     history.remember(result, "zh", captured.source);
-    // No SendChatMessage, Server_NewMessage, synthetic Enter, or network game calls.
+    // F8 only prepares a draft; sending requires the player's own confirmation.
     notify("英文已放入输入框，检查后按回车发送。");
   }).catch(error => {
     if (!disposed && request === inputRequest && epoch === atEpoch) notify(describeError(error) + " 输入框原文保留。");
   }).then(() => { if (request === inputRequest) outgoingBusy = false; });
 }
-function resetScene() {
+function invalidateRequests() {
   epoch++;
   inputRequest++;
   outgoingBusy = false;
   seen.clear();
+  for (const pending of pendingSends.values()) { clearTimeout(pending.timer); pending.reject(new Error('场景已切换，草稿未继续发送。')); }
+  pendingSends.clear();
   translator.invalidate();
-  chatUI.resetScene();
+}
+function clearLocalLines(travel = false) {
   if (uiTimer) clearTimeout(uiTimer);
   uiTimer = null;
-  for (const line of uiLines) releaseLine(line);
-  uiLines = [];
+  const lines = uiLines; uiLines = [];
+  for (const line of lines) releaseLine(line, travel);
+}
+function resetScene() {
+  if (sceneChanging) return;
+  sceneChanging = true;
+  recordStatus('地图切换开始：释放旧界面，暂停接入与显示；等待加载完成。');
+  invalidateRequests();
+  clearLocalLines(true);
+  chatUI.resetScene();
+}
+function resumeScene() {
+  sceneChanging = false;
+  chatUI.resumeScene();
+  recordStatus('地图加载完成：恢复聊天显示与 Mod Hub 接入。');
 }
 function reload() {
-  resetScene();
+  invalidateRequests();
+  // Reloading configuration is not map travel: retain the registered Actor and
+  // its page instead of leaving stale entries in Mod Hub's native registry.
+  chatUI.reloadLayout();
+  clearLocalLines();
   try {
     translator.configure(loadConfig());
     history.refresh(); chatUI.refresh();
@@ -333,6 +414,12 @@ try {
   if (Array.isArray(ids)) handles.push(ids);
   log("接收聊天监听已注册。");
 } catch (_) { log("聊天监听注册失败；F8 输入框翻译仍可测试。请检查 UE4SS 是否启用。"); }
+// HUD's NewMesssage is bound to MessagingSubSystem.OnNewMessage and includes
+// locally sent chat. Do not hook Add Chat Message: it also replays old history.
+try {
+  const ids = RegisterBindHook('/Game/UI/Chat/HUD_Chat.HUD_Chat_C:NewMesssage', null, incoming);
+  if (Array.isArray(ids)) handles.push(ids);
+} catch (_) { recordStatus('本机聊天入口监听未注册，请查看框架状态。'); }
 for (const binding of [["F6", reload], ["F7", selfTest], ["F8", translateInput], ["F9", () => chatUI.toggle()]]) {
   try { if (!RegisterKeyBind(binding[0], binding[1])) log(binding[0] + " 按键注册失败。"); }
   catch (_) { log(binding[0] + " 按键注册失败。"); }
@@ -340,10 +427,9 @@ for (const binding of [["F6", reload], ["F7", selfTest], ["F8", translateInput],
 if (typeof RegisterLoadMapPreHook === "function") {
   try { RegisterLoadMapPreHook(resetScene); } catch (_) {}
 }
-// Also detect new map/controller creation when optional LoadMap hooks are unavailable.
-if (typeof NotifyOnNewObject === "function") {
-  try { NotifyOnNewObject("FSDPlayerController", resetScene); } catch (_) {}
+if (typeof RegisterLoadMapPostHook === "function") {
+  try { RegisterLoadMapPostHook(resumeScene); } catch (_) {}
 }
 chatUI.startHub();
 const startupConfig = translator.getConfig();
-recordStatus("修复版 0.2.2 已加载：F6 加载配置，F7 测试，F8 中译英，F9 聊天记录。翻译" + (startupConfig.Enabled ? "开启" : "关闭") + "，自动英→中" + (startupConfig.IncomingEnabled ? "开启" : "关闭") + "。");
+recordStatus("版本 0.2.3 已加载：F6 加载配置，F7 测试，F8 中译英，F9 聊天记录与输入。翻译" + (startupConfig.Enabled ? "开启" : "关闭") + "，自动英→中" + (startupConfig.IncomingEnabled ? "开启" : "关闭") + "。");

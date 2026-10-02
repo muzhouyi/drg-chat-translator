@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $packageInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
 $version = [string]$packageInfo.version
-if ($version -ne '0.2.2') { throw 'This publication is limited to version 0.2.2.' }
+if ($version -ne '0.2.3') { throw 'This publication is limited to version 0.2.3.' }
 $releaseRoot = Join-Path $projectRoot 'release'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 $modName = "DRGChatTranslator-$version-Mintcat.zip"
@@ -28,6 +28,9 @@ $kitFiles = @(
     @{ Name = $modName; Path = $modPath },
     @{ Name = 'configure.ps1'; Path = (Join-Path $projectRoot 'configure.ps1') },
     @{ Name = '配置翻译.cmd'; Path = (Join-Path $projectRoot '配置翻译.cmd') },
+    @{ Name = 'layout-editor.ps1'; Path = (Join-Path $projectRoot 'layout-editor.ps1') },
+    @{ Name = '调整界面.cmd'; Path = (Join-Path $projectRoot '调整界面.cmd') },
+    @{ Name = '界面调整预览.png'; Path = (Join-Path $projectRoot 'docs/layout-preview.png') },
     @{ Name = 'README.md'; Path = (Join-Path $projectRoot 'README.md') }
 )
 Write-Package (Join-Path $releaseRoot $kitName) $kitFiles

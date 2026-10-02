@@ -35,12 +35,12 @@ test('adapter base matches the Actor type required by the real Mod Hub registry 
 test('compiled names survive Mod Hub 1.2.5 sorting and UTF-16 Chinese text survives binary serialization', () => {
   const mod = load('ChatTranslatorHub'), page = load('ChatTranslatorPage');
   const getter = named(mod, 'GetModInfo');
-  assert.equal(getter.ScriptBytecode[2].Expression.Value.LocalizedSource.Value, '0.2.2');
+  assert.equal(getter.ScriptBytecode[2].Expression.Value.LocalizedSource.Value, '0.2.3');
   const literal = getter.ScriptBytecode[0].Expression.Value.LocalizedSource;
   assert.equal(literal.Value, 'Chat Translator · 聊天翻译');
   assert.ok(literal.Value.charCodeAt(0) <= 256, 'native sorter only visits first character codes 0..256');
   assert.ok(literal.$type.includes('EX_UnicodeStringConst'));
-  assert.equal(named(page, 'GetPageInfo').ScriptBytecode[0].Expression.Value.LocalizedSource.Value, '设置');
+  assert.equal(named(page, 'GetPageInfo').ScriptBytecode[0].Expression.Value.LocalizedSource.Value, 'Settings');
   const output = named(mod, 'GetModPages').ScriptBytecode[0];
   assert.deepEqual(output.Expression.Variable.New.Path, ['TranslatorPages']);
   assert.equal(output.Expression.Variable.New.ResolvedOwner, mod.Exports.indexOf(named(mod, 'ChatTranslatorHub_C')) + 1);

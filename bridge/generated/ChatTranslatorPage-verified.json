@@ -498,11 +498,11 @@
               "TextLiteralType": "LocalizedText",
               "LocalizedSource": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_UnicodeStringConst, UAssetAPI",
-                "Value": "设置"
+                "Value": "Settings"
               },
               "LocalizedKey": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
-                "Value": "C4452DF086214E02A4615C11C243A2D7"
+                "Value": "F3D0BD1148B2438686E91CDBC87990F9"
               },
               "LocalizedNamespace": {
                 "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_StringConst, UAssetAPI",
@@ -526,7 +526,7 @@
           "$type": "UAssetAPI.Kismet.Bytecode.Expressions.EX_EndOfScript, UAssetAPI"
         }
       ],
-      "ScriptBytecodeSize": 66,
+      "ScriptBytecodeSize": 78,
       "ScriptBytecodeRaw": null,
       "Field": {
         "$type": "UAssetAPI.FieldTypes.UField, UAssetAPI",
@@ -543,7 +543,7 @@
       "SuperIndex": 0,
       "TemplateIndex": -12,
       "ObjectFlags": "RF_Public",
-      "SerialSize": 173,
+      "SerialSize": 185,
       "SerialOffset": 4178,
       "ScriptSerializationStartOffset": 0,
       "ScriptSerializationEndOffset": 0,
@@ -641,7 +641,7 @@
       "TemplateIndex": -12,
       "ObjectFlags": "RF_Public",
       "SerialSize": 119,
-      "SerialOffset": 4351,
+      "SerialOffset": 4363,
       "ScriptSerializationStartOffset": 0,
       "ScriptSerializationEndOffset": 0,
       "bForcedExport": false,
@@ -735,7 +735,7 @@
       "TemplateIndex": -26,
       "ObjectFlags": "RF_Public, RF_Transactional",
       "SerialSize": 188,
-      "SerialOffset": 4470,
+      "SerialOffset": 4482,
       "ScriptSerializationStartOffset": 0,
       "ScriptSerializationEndOffset": 0,
       "bForcedExport": false,
@@ -805,7 +805,7 @@
       "TemplateIndex": -23,
       "ObjectFlags": "RF_Public, RF_ClassDefaultObject, RF_ArchetypeObject",
       "SerialSize": 60,
-      "SerialOffset": 4658,
+      "SerialOffset": 4670,
       "ScriptSerializationStartOffset": 0,
       "ScriptSerializationEndOffset": 0,
       "bForcedExport": false,
@@ -1112,7 +1112,7 @@
       "NameCount": 83
     }
   ],
-  "PackageGuid": "{F4D669CD-1962-4FA5-AEE6-5316EDA8B3C5}",
+  "PackageGuid": "{0B62F71E-DCE1-4603-8703-EBCA25873A7E}",
   "PersistentGuid": "{00000000-0000-0000-0000-000000000000}",
   "RecordedEngineVersion": {
     "$type": "UAssetAPI.FEngineVersion, UAssetAPI",
